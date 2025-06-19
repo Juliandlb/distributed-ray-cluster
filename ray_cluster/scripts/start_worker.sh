@@ -21,8 +21,12 @@ retry_count=0
 max_retries=30
 retry_interval=10
 
+# Extract host and port from RAY_HEAD_ADDRESS
+head_host=$(echo $RAY_HEAD_ADDRESS | cut -d: -f1)
+head_port=$(echo $RAY_HEAD_ADDRESS | cut -d: -f2)
+
 while [ $retry_count -lt $max_retries ]; do
-    if nc -z $RAY_HEAD_ADDRESS 6379; then
+    if nc -z $head_host $head_port; then
         echo "Head node is ready!"
         break
     else
@@ -47,8 +51,8 @@ else
 fi
 
 # Join the cluster
-echo "Joining Ray cluster at $RAY_HEAD_ADDRESS:6379..."
-ray start --address=$RAY_HEAD_ADDRESS:6379 \
+echo "Joining Ray cluster at $RAY_HEAD_ADDRESS..."
+ray start --address=$RAY_HEAD_ADDRESS \
     --object-store-memory=500000000 \
     --num-cpus=2 \
     $gpu_arg \
