@@ -1,0 +1,35 @@
+# Laptop-optimized configuration for limited resources
+ray:
+  head:
+    port: 6379
+    dashboard_port: 8265
+    object_store_memory: 500000000  # 500MB (reduced from 1GB)
+    num_cpus: 2  # Reduced from 4
+    temp_dir: /tmp/ray
+    include_dashboard: true
+    log_to_driver: true
+    logging_level: INFO
+    
+  worker:
+    head_address: ${RAY_HEAD_ADDRESS}
+    port: 0
+    object_store_memory: 500000000  # 500MB
+    num_cpus: 2  # Reduced from 4
+    num_gpus: 0  # No GPU
+    temp_dir: /tmp/ray
+    log_to_driver: false
+    logging_level: INFO
+
+# Load only the smallest model for testing
+models:
+  preload: ["tiny-gpt2"]  # Only load the smallest model
+  cache_dir: "/app/models"
+
+# Resource limits for containers
+resources:
+  memory_limit: "2GB"  # Limit memory usage
+  cpu_limit: "2"       # Limit CPU usage
+
+logging:
+  level: INFO
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s" 

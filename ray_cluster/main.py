@@ -7,6 +7,8 @@ import torch
 from typing import List, Dict, Any
 import os
 import sys
+import argparse
+import yaml
 from datetime import datetime
 from transformers import (
     AutoModelForCausalLM,
@@ -58,6 +60,17 @@ MODEL_CONFIGS = {
         }
     }
 }
+
+def load_config(config_path: str) -> Dict[str, Any]:
+    """Load configuration from YAML file."""
+    try:
+        with open(config_path, 'r') as f:
+            config = yaml.safe_load(f)
+        logger.info(f"Loaded configuration from {config_path}")
+        return config
+    except Exception as e:
+        logger.error(f"Failed to load configuration from {config_path}: {e}")
+        return {}
 
 def get_node_info() -> Dict[str, Any]:
     """Get information about the current node."""
@@ -153,31 +166,35 @@ class LLMInferenceActor:
         
         return response
 
-def main():
-    # Set environment variables to disable log deduplication and reduce Ray logging
-    os.environ["RAY_DEDUP_LOGS"] = "0"
-    os.environ["RAY_DISABLE_DEDUP"] = "1"
-    os.environ["RAY_DISABLE_CUSTOM_LOGGER"] = "1"
+def run_head_mode(config: Dict[str, Any]):
+    """Run the application in head mode."""
+    print("\n=== Running in HEAD Mode ===")
+    logger.info("Starting Ray cluster in head mode")
     
-    # Initialize Ray if not already running
-    if not ray.is_initialized():
-        ray.init(
-            logging_level=logging.INFO,
-            log_to_driver=True,
-            include_dashboard=False
-        )
+    # Ray is already initialized by the startup script, so we don't need to call ray.init()
+    # The startup script handles the Ray cluster initialization
     
-    print("\n=== Starting Ray Cluster ===")
-    logger.info("Ray cluster initialized")
+    print("\n=== Ray Cluster Started ===")
+    logger.info("Ray cluster initialized in head mode")
     
     # Create inference actors with different model sizes
     print("\n=== Creating Model Instances ===")
     logger.info("Creating model instances...")
-    actors = [
-        LLMInferenceActor.remote("tiny-gpt2"),
-        LLMInferenceActor.remote("distilbert"),
-        LLMInferenceActor.remote("flan-t5-small")
-    ]
+    
+    model_names = config.get('models', {}).get('preload', ["tiny-gpt2", "distilbert", "flan-t5-small"])
+    actors = []
+    
+    for model_name in model_names:
+        if model_name in MODEL_CONFIGS:
+            actor = LLMInferenceActor.remote(model_name)
+            actors.append(actor)
+            logger.info(f"Created actor for model: {model_name}")
+        else:
+            logger.warning(f"Unknown model: {model_name}")
+    
+    if not actors:
+        logger.error("No valid models to load")
+        return
     
     # Example prompts
     prompts = [
@@ -205,6 +222,95 @@ def main():
     for prompt, result in zip(prompts, results):
         print(f"\nPrompt: {prompt}")
         print(f"Response: {result}")
+    
+    # Keep the cluster running for worker nodes to join
+    print("\n=== Head Node Running ===")
+    print("Cluster is ready for worker nodes to join")
+    print("Press Ctrl+C to stop the cluster")
+    
+    try:
+        while True:
+            time.sleep(10)
+            # Print cluster status
+            cluster_resources = ray.cluster_resources()
+            print(f"\nCluster Resources: {cluster_resources}")
+    except KeyboardInterrupt:
+        print("\nShutting down Ray cluster...")
+        ray.shutdown()
+
+def run_worker_mode(config: Dict[str, Any]):
+    """Run the application in worker mode."""
+    print("\n=== Running in WORKER Mode ===")
+    logger.info("Starting Ray worker node")
+    
+    # Ray is already initialized by the startup script, so we don't need to call ray.init()
+    # The startup script handles connecting to the Ray cluster
+    
+    print("\n=== Worker Node Joined Cluster ===")
+    logger.info("Worker node successfully joined the cluster")
+    
+    # Create inference actors for this worker
+    print("\n=== Creating Model Instances ===")
+    logger.info("Creating model instances on worker node...")
+    
+    model_names = config.get('models', {}).get('preload', ["tiny-gpt2", "distilbert", "flan-t5-small"])
+    actors = []
+    
+    for model_name in model_names:
+        if model_name in MODEL_CONFIGS:
+            actor = LLMInferenceActor.remote(model_name)
+            actors.append(actor)
+            logger.info(f"Created actor for model: {model_name}")
+        else:
+            logger.warning(f"Unknown model: {model_name}")
+    
+    if not actors:
+        logger.error("No valid models to load")
+        return
+    
+    print(f"\n=== Worker Node Ready ===")
+    print(f"Loaded {len(actors)} models and ready for inference")
+    print("Worker node will remain active for incoming requests")
+    
+    # Keep the worker running
+    try:
+        while True:
+            time.sleep(30)
+            # Print worker status
+            node_info = get_node_info()
+            print(f"\nWorker Status - Node: {node_info['hostname']}, Ray ID: {node_info['ray_node_id']}")
+    except KeyboardInterrupt:
+        print("\nShutting down worker node...")
+        ray.shutdown()
+
+def main():
+    # Parse command line arguments
+    parser = argparse.ArgumentParser(description='Ray Cluster LLM Inference')
+    parser.add_argument('--mode', choices=['head', 'worker'], default='head',
+                       help='Run mode: head (cluster leader) or worker (cluster member)')
+    parser.add_argument('--config', type=str, default=None,
+                       help='Path to configuration file')
+    
+    args = parser.parse_args()
+    
+    # Set environment variables to disable log deduplication and reduce Ray logging
+    os.environ["RAY_DEDUP_LOGS"] = "0"
+    os.environ["RAY_DISABLE_DEDUP"] = "1"
+    os.environ["RAY_DISABLE_CUSTOM_LOGGER"] = "1"
+    
+    # Load configuration
+    config = {}
+    if args.config:
+        config = load_config(args.config)
+    
+    # Run in appropriate mode
+    if args.mode == 'head':
+        run_head_mode(config)
+    elif args.mode == 'worker':
+        run_worker_mode(config)
+    else:
+        logger.error(f"Unknown mode: {args.mode}")
+        sys.exit(1)
 
 if __name__ == "__main__":
     main()

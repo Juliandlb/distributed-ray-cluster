@@ -1,0 +1,94 @@
+version: '3.8'
+
+services:
+  # Ray Head Node
+  ray-head:
+    build:
+      context: .
+      dockerfile: Dockerfile.head
+    container_name: ray-cluster-head
+    ports:
+      - "6379:6379"      # Ray port
+      - "8265:8265"      # Ray dashboard
+      - "10001:10001"    # Ray object store
+    environment:
+      - RAY_DISABLE_DEDUP=1
+      - RAY_DISABLE_CUSTOM_LOGGER=1
+      - PYTHONUNBUFFERED=1
+    volumes:
+      - ./models:/app/models
+      - ray-head-data:/tmp/ray
+    networks:
+      - ray-cluster
+    healthcheck:
+      test: ["CMD", "/app/health_check.sh"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    restart: unless-stopped
+
+  # Ray Worker Node 1
+  ray-worker-1:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    container_name: ray-cluster-worker-1
+    environment:
+      - RAY_HEAD_ADDRESS=ray-head:6379
+      - CUDA_VISIBLE_DEVICES=0
+      - RAY_DISABLE_DEDUP=1
+      - RAY_DISABLE_CUSTOM_LOGGER=1
+      - PYTHONUNBUFFERED=1
+    depends_on:
+      ray-head:
+        condition: service_healthy
+    volumes:
+      - ./models:/app/models
+      - ray-worker-1-data:/tmp/ray
+    networks:
+      - ray-cluster
+    healthcheck:
+      test: ["CMD", "/app/health_check.sh"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    restart: unless-stopped
+
+  # Ray Worker Node 2
+  ray-worker-2:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    container_name: ray-cluster-worker-2
+    environment:
+      - RAY_HEAD_ADDRESS=ray-head:6379
+      - CUDA_VISIBLE_DEVICES=1
+      - RAY_DISABLE_DEDUP=1
+      - RAY_DISABLE_CUSTOM_LOGGER=1
+      - PYTHONUNBUFFERED=1
+    depends_on:
+      ray-head:
+        condition: service_healthy
+    volumes:
+      - ./models:/app/models
+      - ray-worker-2-data:/tmp/ray
+    networks:
+      - ray-cluster
+    healthcheck:
+      test: ["CMD", "/app/health_check.sh"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    restart: unless-stopped
+
+volumes:
+  ray-head-data:
+  ray-worker-1-data:
+  ray-worker-2-data:
+
+networks:
+  ray-cluster:
+    driver: bridge 

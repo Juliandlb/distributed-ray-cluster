@@ -1,0 +1,19 @@
+FROM ray-cluster-base:latest
+
+# Expose Ray ports
+EXPOSE 6379 8265 10001
+
+# Copy head node configuration and scripts
+COPY config/head_config.yaml /app/
+COPY scripts/start_head.sh /app/
+COPY scripts/health_check.sh /app/
+
+# Make scripts executable
+RUN chmod +x /app/start_head.sh /app/health_check.sh
+
+# Set health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD /app/health_check.sh
+
+# Start the head node
+CMD ["/app/start_head.sh"] 

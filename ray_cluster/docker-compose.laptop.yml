@@ -1,0 +1,86 @@
+version: '3.8'
+
+services:
+  # Ray Head Node (laptop-optimized)
+  ray-head:
+    build:
+      context: .
+      dockerfile: Dockerfile.head
+    container_name: ray-cluster-head-laptop
+    ports:
+      - "6379:6379"      # Ray port
+      - "8265:8265"      # Ray dashboard
+    environment:
+      - RAY_DISABLE_DEDUP=1
+      - RAY_DISABLE_CUSTOM_LOGGER=1
+      - PYTHONUNBUFFERED=1
+      - RAY_memory_usage_threshold=0.8  # Lower threshold to prevent OOM
+      - RAY_memory_monitor_refresh_ms=1000  # Check memory every second
+      - RAY_object_spilling_config={"type":"filesystem","params":{"directory_path":"/tmp/ray/spill"}}
+    volumes:
+      - ./models:/app/models
+      - ray-head-data:/tmp/ray
+    networks:
+      - ray-cluster
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '2.0'
+        reservations:
+          memory: 1G
+          cpus: '1.0'
+    healthcheck:
+      test: ["CMD", "/app/health_check.sh"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    restart: unless-stopped
+
+  # Single Ray Worker Node (laptop-optimized)
+  ray-worker-1:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    container_name: ray-cluster-worker-laptop
+    environment:
+      - RAY_HEAD_ADDRESS=ray-head:6379
+      - CUDA_VISIBLE_DEVICES=  # No GPU
+      - RAY_DISABLE_DEDUP=1
+      - RAY_DISABLE_CUSTOM_LOGGER=1
+      - PYTHONUNBUFFERED=1
+      - RAY_memory_usage_threshold=0.8  # Lower threshold to prevent OOM
+      - RAY_memory_monitor_refresh_ms=1000  # Check memory every second
+      - RAY_object_spilling_config={"type":"filesystem","params":{"directory_path":"/tmp/ray/spill"}}
+    depends_on:
+      ray-head:
+        condition: service_healthy
+    volumes:
+      - ./models:/app/models
+      - ray-worker-data:/tmp/ray
+    networks:
+      - ray-cluster
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '2.0'
+        reservations:
+          memory: 1G
+          cpus: '1.0'
+    healthcheck:
+      test: ["CMD", "/app/health_check.sh"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    restart: unless-stopped
+
+volumes:
+  ray-head-data:
+  ray-worker-data:
+
+networks:
+  ray-cluster:
+    driver: bridge 
