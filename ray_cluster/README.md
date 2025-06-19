@@ -274,6 +274,127 @@ spec:
           value: ""
 ```
 
+## 🚀 Running Multiple Worker Nodes (Laptop Mode)
+
+### Quick Scaling with Script
+
+The easiest way to add multiple worker nodes is using the provided script:
+
+```bash
+# Add 3 worker nodes
+./add_workers.sh 3
+
+# Add 5 worker nodes  
+./add_workers.sh 5
+
+# Add 10 worker nodes (be careful with memory!)
+./add_workers.sh 10
+```
+
+### Manual Scaling
+
+Add worker nodes one by one:
+
+```bash
+# Worker 1
+docker run -d --name ray-cluster-worker-1 \
+  --network ray_cluster_ray-cluster \
+  -e RAY_HEAD_ADDRESS=ray-cluster-head-laptop:6379 \
+  -e CUDA_VISIBLE_DEVICES= \
+  -e RAY_DISABLE_DEDUP=1 \
+  -e RAY_DISABLE_CUSTOM_LOGGER=1 \
+  -e PYTHONUNBUFFERED=1 \
+  ray_cluster-ray-worker-1
+
+# Worker 2
+docker run -d --name ray-cluster-worker-2 \
+  --network ray_cluster_ray-cluster \
+  -e RAY_HEAD_ADDRESS=ray-cluster-head-laptop:6379 \
+  -e CUDA_VISIBLE_DEVICES= \
+  -e RAY_DISABLE_DEDUP=1 \
+  -e RAY_DISABLE_CUSTOM_LOGGER=1 \
+  -e PYTHONUNBUFFERED=1 \
+  ray_cluster-ray-worker-1
+
+# Continue for more workers...
+```
+
+### Check Cluster Scaling
+
+Monitor your cluster as it scales:
+
+```bash
+# View all running containers
+docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
+
+# Check cluster resources
+docker logs ray-cluster-head-laptop --tail 5
+
+# Monitor resource usage
+docker stats
+```
+
+### Laptop Scaling Considerations
+
+**Recommended Limits for 11GB RAM Laptop:**
+- **Conservative**: 2-3 worker nodes (~6-9GB total)
+- **Aggressive**: 4-5 worker nodes (~8-11GB total)
+- **Maximum**: 6+ worker nodes (may cause OOM)
+
+**Memory Usage per Worker:**
+- **tiny-gpt2 model**: ~650MB RSS per worker
+- **Base container**: ~200MB per worker
+- **Total per worker**: ~850MB-1GB
+
+**Scaling Benefits:**
+- **More CPUs**: Each worker adds 2 CPUs
+- **Better load distribution**: Tasks spread across nodes
+- **Higher throughput**: More concurrent operations
+- **Fault tolerance**: If one worker fails, others continue
+
+**Warning Signs:**
+- System becomes sluggish
+- Docker stats show high memory usage
+- OOM errors in logs
+- Workers being killed by Ray memory monitor
+
+### Scaling Down
+
+Remove worker nodes when needed:
+
+```bash
+# Stop and remove specific workers
+docker stop ray-cluster-worker-3 ray-cluster-worker-4
+docker rm ray-cluster-worker-3 ray-cluster-worker-4
+
+# Or remove all workers
+docker stop $(docker ps -q --filter "name=ray-cluster-worker")
+docker rm $(docker ps -aq --filter "name=ray-cluster-worker")
+```
+
+### Example: Scaling Session
+
+```bash
+# Start with head node
+docker-compose -f docker-compose.laptop.yml up -d ray-head
+
+# Add 3 workers
+./add_workers.sh 3
+
+# Check cluster status
+docker logs ray-cluster-head-laptop --tail 3
+# Expected output: CPU: 6.0, memory: ~36GB, 4 nodes total
+
+# Add 2 more workers
+./add_workers.sh 2
+
+# Check final status  
+docker logs ray-cluster-head-laptop --tail 3
+# Expected output: CPU: 10.0, memory: ~48GB, 6 nodes total
+```
+
+**Result:** Your laptop can handle multiple worker nodes, but monitor memory usage carefully!
+
 ## Environment Variables
 
 | Variable | Description | Default |
@@ -331,6 +452,38 @@ top
 # Monitor Docker resources
 docker stats
 ```
+
+### 🔍 Enhanced Logging & Node Operation Visibility
+
+This cluster now features **detailed, real-time logging** for every node and every inference operation:
+
+- **Prompt and Output Visibility:**
+  - Every prompt sent to a model is logged with node, process, and Ray node ID information.
+  - The output (model response) is also logged, along with timing and memory usage, for every inference operation.
+  - Logs are clearly separated and labeled, making it easy to see which node and which actor handled each request.
+
+- **Cluster Operation Visibility:**
+  - The head node logs task distribution, which actor handled which prompt, and prints a summary of all results.
+  - Worker nodes log their own status, model loading, and readiness, and will show inference logs if they are assigned tasks.
+
+- **How to Observe:**
+  - View logs in real time with:
+    ```bash
+    docker logs ray-cluster-head-laptop
+    docker logs ray-cluster-worker-laptop
+    ```
+  - Logs show banners for actor creation, prompt receipt, output, and periodic status updates.
+  - All logs include node/actor identification for full traceability.
+
+- **Test Script:**
+  - Use the provided test script to trigger distributed inference and see the enhanced logging in action:
+    ```bash
+    python test_distributed_inference.py
+    ```
+  - The script sends prompts to the cluster and you can observe the detailed logs in the container outputs.
+
+**Result:**
+You have full, clear, real-time visibility into every operation, prompt, and output for every node and actor in your distributed Ray cluster.
 
 ### Troubleshooting
 
