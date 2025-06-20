@@ -1,6 +1,30 @@
 # Distributed Ray Cluster with Model Inference
 
-This project demonstrates a distributed Ray cluster setup for running multiple lightweight language models in parallel. It uses Ray's distributed computing framework to manage model inference across multiple processes.
+This repository implements a **distributed inference system inspired by Ray on Golem**, demonstrating how to build scalable, distributed language model inference using Ray's distributed computing framework. The project serves as a proof-of-concept for running multiple lightweight language models in parallel across a distributed cluster.
+
+## 🎯 **Project Goal**
+
+This project aims to explore and implement distributed inference capabilities similar to those found in Ray on Golem, but focused on local and containerized deployments. It demonstrates how to:
+
+- Distribute model inference across multiple nodes
+- Scale horizontally by adding worker nodes dynamically
+- Balance load across the cluster automatically
+- Monitor and manage distributed resources efficiently
+
+## 📚 **Development Documentation**
+
+**All detailed development work, implementation details, and technical documentation for this project is maintained in the `ray_cluster/README.md` file.** This includes:
+
+- Complete setup and deployment instructions
+- Architecture details and configuration options
+- Testing results and performance metrics
+- Troubleshooting guides and best practices
+- Latest improvements and feature updates
+
+**For the most up-to-date and comprehensive information, please refer to:**
+```
+ray_cluster/README.md
+```
 
 ## Features
 
@@ -12,96 +36,69 @@ This project demonstrates a distributed Ray cluster setup for running multiple l
 - Memory usage tracking for each model
 - Node information display (IP, hostname, Ray node ID)
 - CPU-only inference support
+- Containerized deployment with Docker
+- Dynamic worker node scaling
 
 ## Project Structure
 
 ```
-ray_cluster/
-├── main.py           # Main script with model inference logic
-├── cluster.yaml      # Ray cluster configuration
-└── requirements.txt  # Project dependencies
+distributed-ray-cluster/
+├── ray_cluster/           # Main implementation directory
+│   ├── README.md         # Complete development documentation
+│   ├── main.py           # Main script with model inference logic
+│   ├── docker-compose.yml # Container orchestration
+│   ├── Dockerfile.*      # Container definitions
+│   └── requirements.txt  # Project dependencies
+├── ray_on_golem/         # Golem-specific implementations (future)
+└── README.md             # This overview file
 ```
 
-## Prerequisites
+## Quick Start
 
-- Python 3.13+
-- Ray 2.9.0
-- PyTorch 2.2.1
-- Transformers 4.38.2
+For detailed setup and usage instructions, see `ray_cluster/README.md`. Here's a brief overview:
 
-## Installation
-
-1. Clone the repository:
+1. **Clone the repository:**
 ```bash
 git clone https://github.com/Juliandlb/distributed-ray-cluster.git
 cd distributed-ray-cluster
 ```
 
-2. Create and activate a virtual environment:
+2. **Start the cluster (laptop mode):**
 ```bash
-python -m venv .venv
-source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+cd ray_cluster
+docker-compose -f docker-compose.laptop.yml up -d ray-head
 ```
 
-3. Install dependencies:
+3. **Add worker nodes:**
 ```bash
-pip install -r ray_cluster/requirements.txt
+./add_workers.sh 2  # Add 2 worker nodes
 ```
 
-## Usage
-
-1. Start the Ray head node:
+4. **Run distributed inference:**
 ```bash
-ray start --head --port=6380 --redis-password='5241590000000000' --num-cpus=4
-```
-
-2. Start a worker node (in a new terminal):
-```bash
-ray start --address='192.168.0.16:6380' --redis-password='5241590000000000' --num-cpus=4
-```
-
-3. Run the main script:
-```bash
-python ray_cluster/main.py
+python test_distributed_inference.py
 ```
 
 ## Current State
 
-The project currently implements:
-- A basic distributed Ray cluster setup
-- Three different model types for inference:
-  - Text generation (GPT-2)
-  - Fill-mask completion (DistilBERT)
-  - Text-to-text generation (T5)
-- Memory usage tracking for each model
-- Basic error handling and logging
+The project successfully implements:
+- ✅ **Containerized distributed Ray cluster** with head and worker nodes
+- ✅ **Dynamic scaling** - worker nodes can join/leave at runtime
+- ✅ **Load balancing** - automatic distribution of inference tasks
+- ✅ **Multiple model types** - GPT-2, DistilBERT, and T5 models
+- ✅ **Memory monitoring** - tracking resource usage across nodes
+- ✅ **Health checks** - reliable cluster monitoring
+- ✅ **Laptop optimization** - configurations for limited resources
 
-## Memory Usage
+## Future Roadmap
 
-The script tracks memory usage for each model:
-- Initial memory usage
-- Memory after model loading
-- Memory during and after inference
+This project serves as a foundation for exploring distributed inference concepts that could be applied to:
 
-## Node Information
-
-Each model instance displays:
-- IP Address
-- Hostname
-- Ray Node ID
-- CUDA availability
-- Memory statistics
-
-## Future Improvements
-
-Potential areas for enhancement:
-1. Add GPU support
-2. Implement model caching
-3. Add more sophisticated error handling
-4. Implement model-specific optimizations
-5. Add monitoring and metrics collection
-6. Support for more model types
-7. Add API endpoints for inference
+1. **Ray on Golem Integration** - Extending to Golem network for decentralized computing
+2. **Cloud Deployment** - Scaling to cloud providers
+3. **Advanced Load Balancing** - Implementing more sophisticated distribution algorithms
+4. **Model Optimization** - Adding quantization and optimization techniques
+5. **API Development** - Building REST APIs for inference requests
 
 ## License
 
@@ -109,4 +106,4 @@ This project is open source and available under the MIT License.
 
 ## Contributing
 
-Contributions are welcome! Please feel free to submit a Pull Request. 
+Contributions are welcome! Please feel free to submit a Pull Request. For detailed development guidelines, see `ray_cluster/README.md`. 
