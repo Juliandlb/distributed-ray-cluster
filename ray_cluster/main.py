@@ -18,14 +18,26 @@ from transformers import (
     pipeline
 )
 
+# Add immediate debug output to confirm module loading
+print("="*80)
+print("[MODULE LOADING] main.py is being imported")
+print("="*80)
+print(f"[TIME] Import time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+print(f"[FILE] File: {__file__}")
+print(f"[PYTHON] Python executable: {sys.executable}")
+
 # Configure logging with a more detailed format
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    force=True
+    handlers=[
+        logging.StreamHandler(),
+        logging.FileHandler('/app/logs/app.log')
+    ]
 )
 
 logger = logging.getLogger(__name__)
+print("[OK] Logging configured")
 
 # Model configurations
 MODEL_CONFIGS = {
@@ -38,6 +50,19 @@ MODEL_CONFIGS = {
         "pipeline_kwargs": {
             "max_length": 50,
             "temperature": 0.7
+        }
+    },
+    "distilgpt2": {
+        "model_id": "distilgpt2",
+        "max_length": 100,
+        "temperature": 0.8,
+        "model_class": AutoModelForCausalLM,
+        "task": "text-generation",
+        "pipeline_kwargs": {
+            "max_length": 100,
+            "temperature": 0.8,
+            "do_sample": True,
+            "pad_token_id": 50256
         }
     },
     "distilbert": {
@@ -80,7 +105,7 @@ def get_node_info() -> Dict[str, Any]:
         'ray_node_id': ray.get_runtime_context().get_node_id(),
         'cuda_available': torch.cuda.is_available() if torch is not None else False,
         'cuda_device_count': torch.cuda.device_count() if torch.cuda.is_available() else 0
-    }
+}
 
 def get_memory_usage():
     process = psutil.Process()
@@ -88,7 +113,8 @@ def get_memory_usage():
     return {
         'rss': memory_info.rss / 1024 / 1024,  # MB
         'vms': memory_info.vms / 1024 / 1024,  # MB
-        'shared': memory_info.shared / 1024 / 1024 if hasattr(memory_info, 'shared') else 0  # MB
+        'shared': memory_info.shared / 1024 / 1024 if hasattr(memory_info, 'shared') else 0,  # MB
+        'private': memory_info.private / 1024 / 1024 if hasattr(memory_info, 'private') else 0  # MB
     }
 
 def log_memory_usage(node_id, model_name, pid, stage, initial_memory=None, final_memory=None):
@@ -99,113 +125,190 @@ def log_memory_usage(node_id, model_name, pid, stage, initial_memory=None, final
         print(f"  RSS: {memory['rss']:.2f}MB")
         print(f"  VMS: {memory['vms']:.2f}MB")
         print(f"  Shared: {memory['shared']:.2f}MB")
+        print(f"  Private: {memory['private']:.2f}MB")
     else:
         print(f"\n[{timestamp}] {model_name} (PID:{pid}) - {stage}")
-        print(f"  RSS: {final_memory['rss']:.2f}MB (Δ: {final_memory['rss'] - initial_memory['rss']:+.2f}MB)")
-        print(f"  VMS: {final_memory['vms']:.2f}MB (Δ: {final_memory['vms'] - initial_memory['vms']:+.2f}MB)")
-        print(f"  Shared: {final_memory['shared']:.2f}MB (Δ: {final_memory['shared'] - initial_memory['shared']:+.2f}MB)")
+        print(f"  RSS: {final_memory['rss']:.2f}MB (delta: {final_memory['rss'] - initial_memory['rss']:+.2f}MB)")
+        print(f"  VMS: {final_memory['vms']:.2f}MB (delta: {final_memory['vms'] - initial_memory['vms']:+.2f}MB)")
+        print(f"  Shared: {final_memory['shared']:.2f}MB (delta: {final_memory['shared'] - initial_memory['shared']:+.2f}MB)")
+        print(f"  Private: {final_memory['private']:.2f}MB (delta: {final_memory['private'] - initial_memory['private']:+.2f}MB)")
     sys.stdout.flush()
 
 @ray.remote
 class LLMInferenceActor:
-    def __init__(self, model_name: str = "tiny-gpt2"):
+    def __init__(self, model_name: str, model_path: str = None):
+        print(f"[ACTOR CREATION] {model_name} Model Instance")
+        print(f"[NODE] Node: {self.node_info['hostname']} ({self.node_info['ip_address']})")
         self.model_name = model_name
         self.model_config = MODEL_CONFIGS[model_name]
-        self.node_info = get_node_info()
-        self.pid = os.getpid()
+        self.model_path = model_path or self.model_config['model_id']
         
-        # Enhanced node information display
-        print(f"\n{'='*80}")
-        print(f"🤖 [ACTOR CREATION] {self.model_name} Model Instance")
-        print(f"{'='*80}")
-        print(f"📍 Node: {self.node_info['hostname']} ({self.node_info['ip_address']})")
-        print(f"🆔 Ray Node ID: {self.node_info['ray_node_id']}")
-        print(f"🆔 Process ID: {self.pid}")
-        print(f"🤖 Model: {self.model_name}")
-        print(f"📦 Model ID: {self.model_config['model_id']}")
-        print(f"🖥️  CUDA Available: {self.node_info['cuda_available']}")
-        if self.node_info['cuda_available']:
-            print(f"🖥️  CUDA Device Count: {self.node_info['cuda_device_count']}")
+        print(f"[MODEL] Model: {self.model_name}")
+        print(f"[MODEL_ID] Model ID: {self.model_config['model_id']}")
         
-        # Get initial memory usage
-        initial_memory = get_memory_usage()
-        print(f"🧠 Initial Memory: {initial_memory['rss']:.2f}MB RSS, {initial_memory['vms']:.2f}MB VMS")
+        # Track memory before model loading
+        initial_memory = self._get_memory_usage()
+        print(f"[MEMORY] Initial memory usage:")
+        print(f"  RSS: {initial_memory['rss']:.2f}MB")
+        print(f"  VMS: {initial_memory['vms']:.2f}MB")
+        print(f"  Shared: {initial_memory['shared']:.2f}MB")
+        print(f"  Private: {initial_memory['private']:.2f}MB")
         
-        # Load model and tokenizer
-        print(f"\n📥 [MODEL LOADING] Loading {self.model_name}...")
-        print(f"   📦 Model: {self.model_config['model_id']}")
-        print(f"   🎯 Task: {self.model_config['task']}")
-        
+        # Load the model
+        print(f"[LOADING] Loading model: {self.model_config['model_id']}")
         self.tokenizer = AutoTokenizer.from_pretrained(self.model_config['model_id'])
-        self.model = self.model_config['model_class'].from_pretrained(self.model_config['model_id'])
-        
-        # Create pipeline for easier inference
-        self.pipe = pipeline(
-            self.model_config['task'],
-            model=self.model,
-            tokenizer=self.tokenizer,
-            **self.model_config['pipeline_kwargs']
+        self.model = AutoModelForCausalLM.from_pretrained(
+            self.model_config['model_id'],
+            torch_dtype=torch.float16 if self.model_config.get('use_fp16', False) else torch.float32,
+            device_map='auto' if self.model_config.get('use_device_map', False) else None
         )
         
-        # Get final memory usage after loading
-        final_memory = get_memory_usage()
-        memory_delta = final_memory['rss'] - initial_memory['rss']
+        # Track memory after model loading
+        final_memory = self._get_memory_usage()
+        self._log_memory_change(initial_memory, final_memory, self.model_name, "MODEL_LOADED")
         
-        print(f"\n✅ [MODEL LOADED] {self.model_name} Ready for Inference")
-        print(f"   🧠 Memory Usage:")
-        print(f"      - Initial: {initial_memory['rss']:.2f}MB RSS, {initial_memory['vms']:.2f}MB VMS")
-        print(f"      - Final:   {final_memory['rss']:.2f}MB RSS, {final_memory['vms']:.2f}MB VMS")
-        print(f"      - Delta:   {memory_delta:+.2f}MB RSS")
-        print(f"   🎯 Ready for: {self.model_config['task']}")
-        print(f"{'='*80}")
+        print(f"\n[OK] [MODEL LOADED] {self.model_name} Ready for Inference")
+    
+    def _get_memory_usage(self):
+        """Get current memory usage for this process"""
+        process = psutil.Process()
+        memory_info = process.memory_info()
+        return {
+            'rss': memory_info.rss / 1024 / 1024,  # MB
+            'vms': memory_info.vms / 1024 / 1024,  # MB
+            'shared': memory_info.shared / 1024 / 1024 if hasattr(memory_info, 'shared') else 0,  # MB
+            'private': memory_info.private / 1024 / 1024 if hasattr(memory_info, 'private') else 0  # MB
+        }
+    
+    def _log_memory_change(self, initial_memory, final_memory, model_name, stage):
+        """Log memory usage changes"""
+        timestamp = datetime.now().strftime('%H:%M:%S.%f')[:-3]
+        if initial_memory:
+            print(f"\n[{timestamp}] {model_name} (PID:{os.getpid()}) - {stage}")
+            print(f"  RSS: {final_memory['rss']:.2f}MB (delta: {final_memory['rss'] - initial_memory['rss']:+.2f}MB)")
+            print(f"  VMS: {final_memory['vms']:.2f}MB (delta: {final_memory['vms'] - initial_memory['vms']:+.2f}MB)")
+            print(f"  Shared: {final_memory['shared']:.2f}MB (delta: {final_memory['shared'] - initial_memory['shared']:+.2f}MB)")
+            print(f"  Private: {final_memory['private']:.2f}MB (delta: {final_memory['private'] - initial_memory['private']:+.2f}MB)")
         sys.stdout.flush()
     
     def generate(self, prompt: str) -> str:
-        timestamp = datetime.now().strftime("%H:%M:%S.%f")[:-3]
+        """Generate text based on the prompt"""
+        timestamp = datetime.now().strftime('%H:%M:%S.%f')[:-3]
         
-        # Enhanced logging with clear node identification
-        print(f"\n{'='*80}")
-        print(f"🚀 [NODE OPERATION] {timestamp}")
-        print(f"📍 Node: {self.node_info['hostname']} ({self.node_info['ip_address']})")
-        print(f"🆔 Ray Node ID: {self.node_info['ray_node_id']}")
-        print(f"🤖 Model: {self.model_name}")
-        print(f"🆔 Process ID: {self.pid}")
-        print(f"📝 Input Prompt: \"{prompt}\"")
-        print(f"{'='*80}")
-        sys.stdout.flush()
+        print(f"[NODE OPERATION] {timestamp}")
+        print(f"[NODE] Node: {get_node_info()['hostname']} ({get_node_info()['ip_address']})")
+        print(f"[MODEL] Model: {self.model_name}")
         
         # Get memory usage before inference
-        pre_inference_memory = get_memory_usage()
+        pre_inference_memory = self._get_memory_usage()
         
         # Generate response based on model type
-        start_time = time.time()
-        if self.model_name == "distilbert":
-            # For DistilBERT, we'll use a simple fill-mask example
-            response = self.pipe(f"{prompt} [MASK]")[0]['sequence']
-        else:
-            # For GPT-2 and T5, we can use text generation
-            response = self.pipe(prompt)[0]['generated_text']
-        end_time = time.time()
+        try:
+            inputs = self.tokenizer(prompt, return_tensors="pt")
+            
+            with torch.no_grad():
+                outputs = self.model.generate(
+                    inputs.input_ids,
+                    max_length=inputs.input_ids.shape[1] + 50,
+                    num_return_sequences=1,
+                    temperature=0.7,
+                    do_sample=True,
+                    pad_token_id=self.tokenizer.eos_token_id
+                )
+            
+            generated_text = self.tokenizer.decode(outputs[0], skip_special_tokens=True)
+            response = generated_text[len(prompt):].strip()
+            
+        except Exception as e:
+            print(f"[ERROR] Generation failed: {e}")
+            response = f"Error generating response: {str(e)}"
         
         # Get memory usage after inference
-        post_inference_memory = get_memory_usage()
+        post_inference_memory = self._get_memory_usage()
         
         # Enhanced output logging
-        print(f"\n{'='*80}")
-        print(f"✅ [OPERATION COMPLETED] {datetime.now().strftime('%H:%M:%S.%f')[:-3]}")
-        print(f"📍 Node: {self.node_info['hostname']} ({self.node_info['ip_address']})")
-        print(f"🤖 Model: {self.model_name}")
-        print(f"⏱️  Processing Time: {end_time - start_time:.3f} seconds")
-        print(f"📝 Input Prompt: \"{prompt}\"")
-        print(f"💬 Generated Response: \"{response}\"")
-        print(f"🧠 Memory Usage:")
-        print(f"   - Before: {pre_inference_memory['rss']:.2f}MB RSS, {pre_inference_memory['vms']:.2f}MB VMS")
-        print(f"   - After:  {post_inference_memory['rss']:.2f}MB RSS, {post_inference_memory['vms']:.2f}MB VMS")
-        print(f"   - Delta:  {post_inference_memory['rss'] - pre_inference_memory['rss']:+.2f}MB RSS")
-        print(f"{'='*80}")
-        sys.stdout.flush()
+        print(f"[OK] [OPERATION COMPLETED] {datetime.now().strftime('%H:%M:%S.%f')[:-3]}")
+        print(f"[NODE] Node: {get_node_info()['hostname']} ({get_node_info()['ip_address']})")
+        print(f"[MODEL] Model: {self.model_name}")
+        print(f"[RESPONSE] Generated {len(response)} characters")
         
         return response
+
+@ray.remote
+class PromptCoordinator:
+    def __init__(self, actors: List[ray.actor.ActorHandle]):
+        self.actors = actors
+        self.actors_dict = {f"actor_{i}": actor for i, actor in enumerate(actors)}
+        
+        print(f"[COORDINATOR] Prompt Coordinator initialized")
+        print(f"[NODE] Node: {get_node_info()['hostname']} ({get_node_info()['ip_address']})")
+        print(f"[MODELS] Available Models: {list(self.actors_dict.keys())}")
+    
+    def process_prompt(self, prompt: str) -> Dict[str, Any]:
+        """Process a prompt using all available actors"""
+        request_timestamp = datetime.now().strftime('%H:%M:%S.%f')[:-3]
+        
+        print(f"[COORDINATOR] Processing prompt: '{prompt[:50]}...'")
+        print(f"[TIME] Timestamp: {request_timestamp}")
+        print(f"[DISTRIBUTION] Distributing to {len(self.actors)} nodes...")
+        
+        # Submit tasks to all actors
+        futures = []
+        for i, actor in enumerate(self.actors):
+            future = actor.generate.remote(prompt)
+            futures.append(future)
+        
+        # Collect results
+        results = []
+        successful_responses = 0
+        
+        for i, future in enumerate(futures):
+            try:
+                result = ray.get(future)
+                results.append({
+                    'actor_id': i,
+                    'response': result,
+                    'timestamp': datetime.now().strftime('%H:%M:%S.%f')[:-3],
+                    'status': 'success'
+                })
+                successful_responses += 1
+                print(f"[OK] [NODE - {i}] Response received")
+            except Exception as e:
+                results.append({
+                    'actor_id': i,
+                    'response': f"Error: {str(e)}",
+                    'timestamp': datetime.now().strftime('%H:%M:%S.%f')[:-3],
+                    'status': 'error'
+                })
+                print(f"[ERROR] [NODE - {i}] Failed: {e}")
+        
+        # Consolidate results
+        consolidated_result = {
+            'prompt': prompt,
+            'request_timestamp': request_timestamp,
+            'total_actors': len(self.actors),
+            'successful_responses': successful_responses,
+            'results': results,
+            'consolidated_response': results[0]['response'] if results else "No responses received"
+        }
+        
+        print(f"[OK] Successful Responses: {successful_responses}/{len(self.actors)}")
+        
+        # Log detailed results
+        for result in results:
+            if result['status'] == 'success':
+                model_name = f"actor_{result['actor_id']}"
+                print(f"\n[MODEL: {model_name.upper()}]")
+                print(f"   [TIME] Time: {result['timestamp']}")
+                print(f"   [RESPONSE] {result['response'][:100]}...")
+            else:
+                print(f"\n[ERROR] [MODEL: actor_{result['actor_id']}]")
+                print(f"   [TIME] Time: {result['timestamp']}")
+                print(f"   [ERROR] {result['response']}")
+        
+        print(f"\n[OK] [HEAD NODE - REQUEST COMPLETED] All responses logged and consolidated")
+        
+        return consolidated_result
 
 def run_head_mode(config: Dict[str, Any]):
     """Run the application in head mode."""
@@ -214,8 +317,13 @@ def run_head_mode(config: Dict[str, Any]):
     print("="*80)
     logger.info("Starting Ray cluster in head mode")
     
-    # Ray is already initialized by the startup script, so we don't need to call ray.init()
-    # The startup script handles the Ray cluster initialization
+    # Initialize Ray in head mode
+    ray.init(
+        include_dashboard=True,
+        dashboard_host='0.0.0.0',
+        dashboard_port=8265,
+        log_to_driver=True
+    )
     
     print("\n✅ [CLUSTER STATUS] Ray Cluster Started Successfully")
     logger.info("Ray cluster initialized in head mode")
@@ -244,6 +352,18 @@ def run_head_mode(config: Dict[str, Any]):
     
     print(f"   📊 Total actors created: {len(actors)}")
     
+    # Create PromptCoordinator for real-time prompting
+    print(f"\n🎯 [REALTIME PROMPT SYSTEM] Initializing Prompt Coordinator...")
+    
+    # Create the prompt coordinator as a named actor in the default namespace
+    prompt_coordinator = PromptCoordinator.options(name="prompt_coordinator").remote(actors)
+    print(f"✅ Prompt Coordinator created and registered as 'prompt_coordinator'")
+    print(f"📡 Coordinator can be accessed by clients for real-time prompting")
+    print(f"🎮 Use realtime_prompt_client.py to send prompts interactively")
+    
+    # Store coordinator reference for potential future use
+    coordinator_ref = prompt_coordinator
+    
     # Example prompts
     prompts = [
         "What is machine learning?",
@@ -271,7 +391,7 @@ def run_head_mode(config: Dict[str, Any]):
         futures.append(future)
         task_assignments.append((i, prompt, actor_index))
         
-        print(f"   📋 Task {i+1}: \"{prompt[:30]}...\" → Actor {actor_index+1} ({model_names[actor_index]})")
+        print(f"   📋 Task {i+1}: '{prompt[:30]}...' -> Actor {actor_index+1} ({model_names[actor_index]})")
     
     print(f"\n⏳ [PROCESSING] Waiting for all tasks to complete...")
     
@@ -287,9 +407,9 @@ def run_head_mode(config: Dict[str, Any]):
     for i, (prompt, result) in enumerate(zip(prompts, results)):
         actor_index = task_assignments[i][2]
         print(f"\n🔍 [TASK {i+1} RESULT]")
-        print(f"   📝 Prompt: \"{prompt}\"")
+        print(f"   📝 Prompt: '{prompt}'")
         print(f"   🤖 Processed by: Actor {actor_index+1} ({model_names[actor_index]})")
-        print(f"   💬 Response: \"{result}\"")
+        print(f"   💬 Response: '{result}'")
         print(f"   {'─'*60}")
     
     print(f"\n✅ [SUMMARY] All {len(prompts)} tasks completed successfully!")
@@ -380,6 +500,16 @@ def run_worker_mode(config: Dict[str, Any]):
         ray.shutdown()
 
 def main():
+    # Add immediate debug logging to confirm execution
+    print("="*80)
+    print("[MAIN.PY STARTING] Application initialization")
+    print("="*80)
+    print(f"[TIME] Timestamp: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    print(f"[PYTHON] Python version: {sys.version}")
+    print(f"[DIR] Working directory: {os.getcwd()}")
+    print(f"[USER] User: {os.getenv('USER', 'unknown')}")
+    print(f"[HOST] Hostname: {socket.gethostname()}")
+    
     # Parse command line arguments
     parser = argparse.ArgumentParser(description='Ray Cluster LLM Inference')
     parser.add_argument('--mode', choices=['head', 'worker'], default='head',
@@ -389,21 +519,127 @@ def main():
     
     args = parser.parse_args()
     
+    print(f"🎯 Mode: {args.mode}")
+    print(f"⚙️  Config file: {args.config}")
+    
     # Set environment variables to disable log deduplication and reduce Ray logging
     os.environ["RAY_DEDUP_LOGS"] = "0"
     os.environ["RAY_DISABLE_DEDUP"] = "1"
     os.environ["RAY_DISABLE_CUSTOM_LOGGER"] = "1"
     
+    print("✅ Environment variables set")
+    
     # Load configuration
     config = {}
     if args.config:
+        try:
         config = load_config(args.config)
+            print(f"✅ Configuration loaded from {args.config}")
+        except Exception as e:
+            print(f"❌ Failed to load configuration: {e}")
+            config = {}
+    else:
+        print("ℹ️  No config file specified, using defaults")
+    
+    print("🔄 Starting Ray cluster...")
     
     # Run in appropriate mode
     if args.mode == 'head':
-        run_head_mode(config)
+        print("[HEAD] Starting Ray head node...")
+        # Start Ray head node
+        ray.init(
+            include_dashboard=True,
+            dashboard_host='0.0.0.0',
+            dashboard_port=8265,
+            log_to_driver=True
+        )
+        print("[HEAD] Ray head node started successfully")
+        
+        # Create actors for each model
+        print("[HEAD] Creating model actors...")
+        actors = []
+        for model_name in MODEL_CONFIGS.keys():
+            print(f"[HEAD] Creating actor for {model_name}...")
+            actor = LLMInferenceActor.remote(model_name)
+            actors.append(actor)
+            print(f"[HEAD] Actor for {model_name} created successfully")
+        
+        # Create prompt coordinator
+        print("[HEAD] Creating prompt coordinator...")
+        coordinator = PromptCoordinator.remote(actors)
+        print("[HEAD] Prompt coordinator created successfully")
+        
+        # Process some example prompts
+        print("[HEAD] Processing example prompts...")
+        example_prompts = [
+            "The quick brown fox",
+            "In a world where",
+            "The future of AI",
+            "Machine learning is",
+            "Distributed computing"
+        ]
+        
+        for i, prompt in enumerate(example_prompts):
+            print(f"[HEAD] Processing prompt {i+1}: '{prompt[:30]}...'")
+            result = ray.get(coordinator.process_prompt.remote(prompt))
+            print(f"[HEAD] Result {i+1}: {result[:100]}...")
+        
+        print("[HEAD] Example processing completed")
+        
+        # Keep the head node running
+        print("[HEAD] Head node is running. Press Ctrl+C to stop.")
+        try:
+            while True:
+                time.sleep(1)
+        except KeyboardInterrupt:
+            print("[HEAD] Shutting down head node...")
+            ray.shutdown()
+    
     elif args.mode == 'worker':
-        run_worker_mode(config)
+        print("[WORKER] Starting Ray worker node...")
+        # Connect to existing Ray cluster
+        ray.init(address='ray-head:6379')
+        print("[WORKER] Connected to Ray cluster successfully")
+        
+        # Create actors for each model
+        print("[WORKER] Creating model actors...")
+        actors = []
+        for model_name in MODEL_CONFIGS.keys():
+            print(f"[WORKER] Creating actor for {model_name}...")
+            actor = LLMInferenceActor.remote(model_name)
+            actors.append(actor)
+            print(f"[WORKER] Actor for {model_name} created successfully")
+        
+        # Create prompt coordinator
+        print("[WORKER] Creating prompt coordinator...")
+        coordinator = PromptCoordinator.remote(actors)
+        print("[WORKER] Prompt coordinator created successfully")
+        
+        # Process some example prompts
+        print("[WORKER] Processing example prompts...")
+        example_prompts = [
+            "The quick brown fox",
+            "In a world where",
+            "The future of AI",
+            "Machine learning is",
+            "Distributed computing"
+        ]
+        
+        for i, prompt in enumerate(example_prompts):
+            print(f"[WORKER] Processing prompt {i+1}: '{prompt[:30]}...'")
+            result = ray.get(coordinator.process_prompt.remote(prompt))
+            print(f"[WORKER] Result {i+1}: {result[:100]}...")
+        
+        print("[WORKER] Example processing completed")
+        
+        # Keep the worker node running
+        print("[WORKER] Worker node is running. Press Ctrl+C to stop.")
+        try:
+            while True:
+                time.sleep(1)
+        except KeyboardInterrupt:
+            print("[WORKER] Shutting down worker node...")
+            ray.shutdown()
     else:
         logger.error(f"Unknown mode: {args.mode}")
         sys.exit(1)

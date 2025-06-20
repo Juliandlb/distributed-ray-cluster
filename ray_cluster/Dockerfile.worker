@@ -4,6 +4,7 @@ FROM ray-cluster-base:latest
 COPY config/worker_config.yaml /app/
 COPY scripts/start_worker.sh /app/
 COPY scripts/health_check.sh /app/
+COPY main.py /app/
 
 # Make scripts executable
 RUN chmod +x /app/start_worker.sh /app/health_check.sh
