@@ -41,15 +41,34 @@ print("[OK] Logging configured")
 
 # Model configurations
 MODEL_CONFIGS = {
-    "tiny-gpt2": {
-        "model_id": "sshleifer/tiny-gpt2",
-        "max_length": 50,
-        "temperature": 0.7,
+    "gpt2": {
+        "model_id": "gpt2",
+        "max_length": 100,
+        "temperature": 0.8,
         "model_class": AutoModelForCausalLM,
         "task": "text-generation",
         "pipeline_kwargs": {
-            "max_length": 50,
-            "temperature": 0.7
+            "max_length": 100,
+            "temperature": 0.8,
+            "do_sample": True,
+            "pad_token_id": 50256,
+            "top_k": 50,
+            "top_p": 0.9
+        }
+    },
+    "gpt2-medium": {
+        "model_id": "gpt2-medium",
+        "max_length": 150,
+        "temperature": 0.8,
+        "model_class": AutoModelForCausalLM,
+        "task": "text-generation",
+        "pipeline_kwargs": {
+            "max_length": 150,
+            "temperature": 0.8,
+            "do_sample": True,
+            "pad_token_id": 50256,
+            "top_k": 50,
+            "top_p": 0.9
         }
     },
     "distilgpt2": {
@@ -62,7 +81,48 @@ MODEL_CONFIGS = {
             "max_length": 100,
             "temperature": 0.8,
             "do_sample": True,
-            "pad_token_id": 50256
+            "pad_token_id": 50256,
+            "top_k": 50,
+            "top_p": 0.9
+        }
+    },
+    "microsoft/DialoGPT-medium": {
+        "model_id": "microsoft/DialoGPT-medium",
+        "max_length": 100,
+        "temperature": 0.8,
+        "model_class": AutoModelForCausalLM,
+        "task": "text-generation",
+        "pipeline_kwargs": {
+            "max_length": 100,
+            "temperature": 0.8,
+            "do_sample": True,
+            "pad_token_id": 50256,
+            "top_k": 50,
+            "top_p": 0.9
+        }
+    },
+    "google/flan-t5-small": {
+        "model_id": "google/flan-t5-small",
+        "max_length": 100,
+        "temperature": 0.7,
+        "model_class": AutoModelForSeq2SeqLM,
+        "task": "text2text-generation",
+        "pipeline_kwargs": {
+            "max_length": 100,
+            "temperature": 0.7,
+            "do_sample": True
+        }
+    },
+    "google/flan-t5-base": {
+        "model_id": "google/flan-t5-base",
+        "max_length": 150,
+        "temperature": 0.7,
+        "model_class": AutoModelForSeq2SeqLM,
+        "task": "text2text-generation",
+        "pipeline_kwargs": {
+            "max_length": 150,
+            "temperature": 0.7,
+            "do_sample": True
         }
     },
     "distilbert": {
@@ -73,12 +133,12 @@ MODEL_CONFIGS = {
         "task": "fill-mask",
         "pipeline_kwargs": {}  # No special parameters needed for fill-mask
     },
-    "flan-t5-small": {
-        "model_id": "google/flan-t5-small",
+    "tiny-gpt2": {
+        "model_id": "sshleifer/tiny-gpt2",
         "max_length": 50,
         "temperature": 0.7,
-        "model_class": AutoModelForSeq2SeqLM,
-        "task": "text2text-generation",
+        "model_class": AutoModelForCausalLM,
+        "task": "text-generation",
         "pipeline_kwargs": {
             "max_length": 50,
             "temperature": 0.7

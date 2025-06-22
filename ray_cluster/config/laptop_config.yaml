@@ -28,7 +28,7 @@ ray:
 
 # Models are now loaded only on worker nodes
 models:
-  preload: ["tiny-gpt2"]  # Load tiny-gpt2 on workers
+  preload: ["gpt2"]  # Load gpt2 on workers for better responses
   cache_dir: "/app/models"
 
 # Resource limits for containers
