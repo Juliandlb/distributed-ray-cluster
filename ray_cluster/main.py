@@ -371,7 +371,7 @@ def run_head_mode(config: Dict[str, Any]):
     
     # Create the prompt coordinator as a named actor in the default namespace
     # It will start with no actors and discover them as workers join
-    prompt_coordinator = PromptCoordinator.options(name="prompt_coordinator").remote([])
+    prompt_coordinator = PromptCoordinator.options(name="prompt_coordinator", namespace="default").remote([])
     print(f"✅ Prompt Coordinator created and registered as 'prompt_coordinator'")
     print(f"📡 Coordinator will discover worker actors as they join")
     print(f"🎮 Use realtime_prompt_client.py to send prompts interactively")
@@ -393,7 +393,7 @@ def run_head_mode(config: Dict[str, Any]):
             
             # Try to get the coordinator to check available actors
             try:
-                coordinator = ray.get_actor("prompt_coordinator")
+                coordinator = ray.get_actor("prompt_coordinator", namespace="default")
                 actor_count = ray.get(coordinator.get_actor_count.remote())
                 print(f"🤖 [ACTOR STATUS] Available inference actors: {actor_count}")
             except Exception as e:
@@ -449,7 +449,7 @@ def run_worker_mode(config: Dict[str, Any]):
     # Register actors with the coordinator
     print(f"\n📡 [ACTOR REGISTRATION] Registering Actors with Coordinator")
     try:
-        coordinator = ray.get_actor("prompt_coordinator")
+        coordinator = ray.get_actor("prompt_coordinator", namespace="default")
         print(f"   ✅ Found coordinator, registering {len(actors)} actors...")
         
         for i, actor in enumerate(actors):
@@ -534,111 +534,11 @@ def main():
     
     print("🔄 Starting Ray cluster...")
     
-    # Run in appropriate mode
+    # Run in appropriate mode using the new architecture
     if args.mode == 'head':
-        print("[HEAD] Starting Ray head node...")
-        # Start Ray head node
-        ray.init(
-            include_dashboard=True,
-            dashboard_host='0.0.0.0',
-            dashboard_port=8265,
-            log_to_driver=True
-        )
-        print("[HEAD] Ray head node started successfully")
-        
-        # Create actors for each model
-        print("[HEAD] Creating model actors...")
-        actors = []
-        for model_name in MODEL_CONFIGS.keys():
-            print(f"[HEAD] Creating actor for {model_name}...")
-            actor = LLMInferenceActor.remote(model_name)
-            actors.append(actor)
-            print(f"[HEAD] Actor for {model_name} created successfully")
-        
-        # Create prompt coordinator
-        print("[HEAD] Creating prompt coordinator...")
-        coordinator = PromptCoordinator.remote(actors)
-        print("[HEAD] Prompt coordinator created successfully")
-        
-        # Process some example prompts
-        print("[HEAD] Processing example prompts...")
-        example_prompts = [
-            "The quick brown fox",
-            "In a world where",
-            "The future of AI",
-            "Machine learning is",
-            "Distributed computing"
-        ]
-        
-        for i, prompt in enumerate(example_prompts):
-            print(f"[HEAD] Processing prompt {i+1}: '{prompt[:30]}...'")
-            result = ray.get(coordinator.process_prompt.remote(prompt))
-            if isinstance(result, dict) and 'consolidated_response' in result:
-                response = result['consolidated_response']
-                print(f"[HEAD] Result {i+1}: {response[:100]}...")
-            else:
-                print(f"[HEAD] Result {i+1}: {str(result)[:100]}...")
-        
-        print("[HEAD] Example processing completed")
-        
-        # Keep the head node running
-        print("[HEAD] Head node is running. Press Ctrl+C to stop.")
-        try:
-            while True:
-                time.sleep(1)
-        except KeyboardInterrupt:
-            print("[HEAD] Shutting down head node...")
-            ray.shutdown()
-    
+        run_head_mode(config)
     elif args.mode == 'worker':
-        print("[WORKER] Starting Ray worker node...")
-        # Connect to existing Ray cluster
-        ray.init(address='ray-head:6379')
-        print("[WORKER] Connected to Ray cluster successfully")
-        
-        # Create actors for each model
-        print("[WORKER] Creating model actors...")
-        actors = []
-        for model_name in MODEL_CONFIGS.keys():
-            print(f"[WORKER] Creating actor for {model_name}...")
-            actor = LLMInferenceActor.remote(model_name)
-            actors.append(actor)
-            print(f"[WORKER] Actor for {model_name} created successfully")
-        
-        # Create prompt coordinator
-        print("[WORKER] Creating prompt coordinator...")
-        coordinator = PromptCoordinator.remote(actors)
-        print("[WORKER] Prompt coordinator created successfully")
-        
-        # Process some example prompts
-        print("[WORKER] Processing example prompts...")
-        example_prompts = [
-            "The quick brown fox",
-            "In a world where",
-            "The future of AI",
-            "Machine learning is",
-            "Distributed computing"
-        ]
-        
-        for i, prompt in enumerate(example_prompts):
-            print(f"[WORKER] Processing prompt {i+1}: '{prompt[:30]}...'")
-            result = ray.get(coordinator.process_prompt.remote(prompt))
-            if isinstance(result, dict) and 'consolidated_response' in result:
-                response = result['consolidated_response']
-                print(f"[WORKER] Result {i+1}: {response[:100]}...")
-            else:
-                print(f"[WORKER] Result {i+1}: {str(result)[:100]}...")
-        
-        print("[WORKER] Example processing completed")
-        
-        # Keep the worker node running
-        print("[WORKER] Worker node is running. Press Ctrl+C to stop.")
-        try:
-            while True:
-                time.sleep(1)
-        except KeyboardInterrupt:
-            print("[WORKER] Shutting down worker node...")
-            ray.shutdown()
+        run_worker_mode(config)
     else:
         logger.error(f"Unknown mode: {args.mode}")
         sys.exit(1)

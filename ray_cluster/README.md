@@ -132,12 +132,18 @@ The system now includes a **real-time interactive client** that allows you to:
 # Start the cluster first
 docker-compose -f docker-compose.laptop.yml up -d
 
-# Run the working real-time client (recommended)
-docker-compose exec ray-head python working_realtime_client.py
+# Run the real interactive prompt client (recommended)
+docker cp ray_cluster/real_interactive_prompts.py ray-cluster-head-laptop:/app/
+docker exec -it ray-cluster-head-laptop python real_interactive_prompts.py
 
-# Or test the new architecture
-docker-compose exec ray-head python test_new_architecture.py
+# Or run the working real-time prompt client
+docker cp ray_cluster/working_realtime_prompts.py ray-cluster-head-laptop:/app/
+docker exec -it ray-cluster-head-laptop python working_realtime_prompts.py
 ```
+
+### **Troubleshooting**
+- If you see errors about the coordinator not being found, make sure you are using the latest code and that the coordinator is registered and accessed with `namespace="default"` in all Ray API calls.
+- The real-time prompt clients now connect to the coordinator using the correct namespace and will show real distributed inference results.
 
 ### **Real-time Client Features**
 
