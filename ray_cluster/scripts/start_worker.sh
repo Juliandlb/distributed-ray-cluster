@@ -53,7 +53,7 @@ fi
 # Join the cluster
 echo "Joining Ray cluster at $RAY_HEAD_ADDRESS..."
 ray start --address=$RAY_HEAD_ADDRESS \
-    --object-store-memory=500000000 \
+    --object-store-memory=800000000 \
     --num-cpus=2 \
     $gpu_arg \
     --temp-dir=/tmp/ray
@@ -62,4 +62,4 @@ echo "Ray worker node joined successfully!"
 
 # Start the main application in worker mode
 echo "Starting main application in worker mode..."
-python /app/main.py --mode=worker --config=/app/worker_config.yaml 
+python /app/main.py --mode=worker --config=/app/config/laptop_config.yaml 

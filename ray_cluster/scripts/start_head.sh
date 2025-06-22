@@ -16,7 +16,7 @@ ray start --head \
     --port=6379 \
     --dashboard-port=8265 \
     --object-store-memory=500000000 \
-    --num-cpus=2 \
+    --num-cpus=1 \
     --temp-dir=/tmp/ray
 
 echo "Ray head node started successfully!"
@@ -24,4 +24,4 @@ echo "Dashboard available at: http://$(hostname -i):8265"
 
 # Start the main application in head mode
 echo "Starting main application in head mode..."
-python /app/main.py --mode=head --config=/app/head_config.yaml 
+python /app/main.py --mode=head --config=/app/config/laptop_config.yaml 

@@ -1,6 +1,7 @@
 FROM ray-cluster-base:latest
 
 # Copy worker node configuration and scripts
+COPY config/ /app/config/
 COPY config/worker_config.yaml /app/
 COPY scripts/start_worker.sh /app/
 COPY scripts/health_check.sh /app/

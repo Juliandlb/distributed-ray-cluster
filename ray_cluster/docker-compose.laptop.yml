@@ -25,7 +25,7 @@ services:
     deploy:
       resources:
         limits:
-          memory: 1G  # Reduced to 1GB (coordinator only)
+          memory: 2048M
           cpus: '1.0'  # Reduced to 1 CPU
         reservations:
           memory: 500M  # Reduced to 500MB
