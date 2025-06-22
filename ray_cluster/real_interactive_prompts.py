@@ -72,7 +72,8 @@ def display_cluster_status(coordinator):
         print(f"\n🖥️  [NODES] Total: {len(nodes)}")
         for node_id, node_info in nodes.items():
             status = "🟢" if node_info['alive'] else "🔴"
-            print(f"   {status} {node_info['hostname']} ({node_info['ip']})")
+            print(f"   {status} {node_info['label']} ({node_info['hostname']})")
+            print(f"      IP: {node_info['ip']}")
             print(f"      Actors: {node_info['actor_count']}")
             print(f"      Resources: CPU={node_info['resources'].get('CPU', 0):.1f}, Memory={node_info['resources'].get('memory', 0) / 1024 / 1024 / 1024:.1f}GB")
         
@@ -80,7 +81,7 @@ def display_cluster_status(coordinator):
         actors = cluster_status['actor_details']
         print(f"\n🤖 [ACTORS] Total: {len(actors)}")
         for actor_id, actor_info in actors.items():
-            print(f"   Actor {actor_id}: {actor_info['model_name']} on {actor_info['node_hostname']}")
+            print(f"   Actor {actor_id}: {actor_info['model_name']} on {actor_info['node_label']}")
         
         print("="*60)
         
@@ -111,7 +112,7 @@ def process_prompt_with_node_info(coordinator, prompt):
         for i, response in enumerate(result['results']):
             if response['status'] == 'success':
                 print(f"   ✅ Actor {response['actor_id']} ({response['model_name']})")
-                print(f"      Node: {response['node_hostname']} ({response['node_ip']})")
+                print(f"      {response['node_label']}: {response['node_hostname']} ({response['node_ip']})")
                 print(f"      Processing time: {response['processing_time']:.2f}s")
                 print(f"      Response: {response['response'][:200]}{'...' if len(response['response']) > 200 else ''}")
             else:
@@ -121,7 +122,8 @@ def process_prompt_with_node_info(coordinator, prompt):
         if result['successful_responses'] == 1:
             for response in result['results']:
                 if response['status'] == 'success':
-                    print(f"\n🎯 [ANSWERED BY] Node: {response['node_hostname']} ({response['node_ip']})")
+                    print(f"\n🎯 [ANSWERED BY] {response['node_label']}")
+                    print(f"   Hostname: {response['node_hostname']} ({response['node_ip']})")
                     print(f"   Model: {response['model_name']}")
                     print(f"   Processing time: {response['processing_time']:.2f}s")
                     break
@@ -201,7 +203,7 @@ def real_interactive_prompts():
                         actor_info = ray.get(coordinator.get_actor_info.remote())
                         print(f"\n🤖 [ACTORS] Total: {actor_info['total_actors']}")
                         for actor_id, info in actor_info['actors'].items():
-                            print(f"   Actor {actor_id}: {info['model_name']} on {info['node_hostname']}")
+                            print(f"   Actor {actor_id}: {info['model_name']} on {info['node_label']}")
                     except Exception as e:
                         print(f"❌ Error getting actor info: {e}")
                 else:

@@ -165,7 +165,68 @@ def get_node_info() -> Dict[str, Any]:
         'ray_node_id': ray.get_runtime_context().get_node_id(),
         'cuda_available': torch.cuda.is_available() if torch is not None else False,
         'cuda_device_count': torch.cuda.device_count() if torch.cuda.is_available() else 0
-}
+    }
+
+def get_node_label(node_info: Dict[str, Any], is_head: bool = False, worker_number: int = None) -> str:
+    """Get a human-readable label for a node."""
+    if is_head:
+        return "Head Node"
+    elif worker_number is not None:
+        return f"Worker Node #{worker_number}"
+    else:
+        # Try to determine if it's a worker by hostname pattern
+        hostname = node_info.get('hostname', '')
+        if 'worker' in hostname.lower():
+            # Extract number from hostname if possible
+            import re
+            numbers = re.findall(r'\d+', hostname)
+            if numbers:
+                return f"Worker Node #{numbers[0]}"
+            else:
+                return "Worker Node"
+        else:
+            return "Unknown Node"
+
+def get_cluster_node_mapping() -> Dict[str, Dict[str, Any]]:
+    """Get a mapping of all nodes in the cluster with proper labels."""
+    try:
+        nodes = ray.nodes()
+        node_mapping = {}
+        worker_count = 0
+        
+        for node in nodes:
+            node_id = node['NodeID']
+            hostname = node.get('Hostname', 'unknown')
+            ip = node.get('NodeIP', 'unknown')
+            alive = node.get('Alive', False)
+            resources = node.get('Resources', {})
+            
+            # Determine if this is the head node
+            is_head = node_id == ray.get_runtime_context().get_node_id() or 'head' in hostname.lower()
+            
+            if is_head:
+                label = "Head Node"
+                node_type = "head"
+            else:
+                worker_count += 1
+                label = f"Worker Node #{worker_count}"
+                node_type = "worker"
+            
+            node_mapping[node_id] = {
+                'hostname': hostname,
+                'ip': ip,
+                'alive': alive,
+                'resources': resources,
+                'label': label,
+                'type': node_type,
+                'worker_number': worker_count if not is_head else None,
+                'actor_count': 0  # Will be updated later
+            }
+        
+        return node_mapping
+    except Exception as e:
+        print(f"[WARNING] Could not get cluster node mapping: {e}")
+        return {}
 
 def get_memory_usage():
     process = psutil.Process()
@@ -203,8 +264,38 @@ class LLMInferenceActor:
         # Get node information for this actor
         self.node_info = get_node_info()
         
+        # Determine if this is running on head or worker
+        # Check container name to determine node type
+        hostname = self.node_info['hostname']
+        
+        # Check if this is the head node by looking for 'head' in hostname
+        # or by checking if it's the current node (head node runs the coordinator)
+        is_head = 'head' in hostname.lower()
+        
+        if is_head:
+            self.node_label = "Head Node"
+        else:
+            # This is a worker node
+            # Since hostname is a random container ID, we'll use a simple approach
+            # In a real deployment, you'd use environment variables or container names
+            
+            # For now, assume it's the first worker
+            # In a multi-worker setup, you'd use environment variables like WORKER_NUMBER
+            worker_number = 1
+            
+            # Try to get worker number from environment variable if available
+            import os
+            env_worker_number = os.environ.get('WORKER_NUMBER')
+            if env_worker_number:
+                try:
+                    worker_number = int(env_worker_number)
+                except ValueError:
+                    worker_number = 1
+            
+            self.node_label = f"Worker Node #{worker_number}"
+        
         print(f"[ACTOR CREATION] {model_name} Model Instance")
-        print(f"[NODE] Node: {self.node_info['hostname']} ({self.node_info['ip_address']})")
+        print(f"[NODE] {self.node_label}: {self.node_info['hostname']} ({self.node_info['ip_address']})")
         print(f"[MODEL] Model: {model_name}")
         print(f"[MODEL_ID] Model ID: {self.model_config['model_id']}")
         
@@ -221,7 +312,7 @@ class LLMInferenceActor:
         self._log_memory_change(initial_memory, final_memory, self.model_name, "MODEL_LOADED")
         
         print(f"\n[OK] [MODEL LOADED] {self.model_name} Ready for Inference")
-        print(f"[NODE] Running on: {self.node_info['hostname']} ({self.node_info['ip_address']})")
+        print(f"[NODE] Running on: {self.node_label} ({self.node_info['hostname']})")
 
     def _get_memory_usage(self):
         """Get current memory usage"""
@@ -240,7 +331,9 @@ class LLMInferenceActor:
 
     def get_node_info(self) -> Dict[str, Any]:
         """Get current node information for this actor"""
-        return get_node_info()
+        node_info = get_node_info()
+        node_info['node_label'] = self.node_label
+        return node_info
 
     def generate(self, prompt: str) -> str:
         """Generate response for the given prompt"""
@@ -248,9 +341,10 @@ class LLMInferenceActor:
         
         # Get current node info for this request
         current_node_info = get_node_info()
+        current_node_info['node_label'] = self.node_label
         
-        print(f"\n[INFERENCE] Processing prompt on {current_node_info['hostname']}")
-        print(f"[NODE] Node: {current_node_info['hostname']} ({current_node_info['ip_address']})")
+        print(f"\n[INFERENCE] Processing prompt on {self.node_label}")
+        print(f"[NODE] {self.node_label}: {current_node_info['hostname']} ({current_node_info['ip_address']})")
         print(f"[MODEL] Model: {self.model_name}")
         print(f"[PROMPT] '{prompt[:50]}{'...' if len(prompt) > 50 else ''}'")
         
@@ -280,7 +374,7 @@ class LLMInferenceActor:
             processing_time = end_time - start_time
             
             print(f"[RESPONSE] Generated in {processing_time:.2f}s")
-            print(f"[NODE] Response from: {current_node_info['hostname']} ({current_node_info['ip_address']})")
+            print(f"[NODE] Response from: {self.node_label} ({current_node_info['ip_address']})")
             
             # Return response with node information
             return {
@@ -288,6 +382,7 @@ class LLMInferenceActor:
                 'node_hostname': current_node_info['hostname'],
                 'node_ip': current_node_info['ip_address'],
                 'node_id': current_node_info['ray_node_id'],
+                'node_label': self.node_label,
                 'model_name': self.model_name,
                 'processing_time': processing_time
             }
@@ -299,6 +394,7 @@ class LLMInferenceActor:
                 'node_hostname': current_node_info['hostname'],
                 'node_ip': current_node_info['ip_address'],
                 'node_id': current_node_info['ray_node_id'],
+                'node_label': self.node_label,
                 'model_name': self.model_name,
                 'processing_time': time.time() - start_time,
                 'error': str(e)
@@ -324,7 +420,8 @@ class PromptCoordinator:
                 'model_name': model_name,
                 'node_hostname': node_info['hostname'],
                 'node_ip': node_info['ip_address'],
-                'node_id': node_info['ray_node_id']
+                'node_id': node_info['ray_node_id'],
+                'node_label': node_info.get('node_label', 'Unknown Node')
             }
         except:
             # Fallback if node info not available
@@ -332,10 +429,11 @@ class PromptCoordinator:
                 'model_name': model_name,
                 'node_hostname': 'unknown',
                 'node_ip': 'unknown',
-                'node_id': 'unknown'
+                'node_id': 'unknown',
+                'node_label': 'Unknown Node'
             }
         
-        print(f"[COORDINATOR] Registered actor {actor_id} ({model_name}) on {self.actor_info[actor_id]['node_hostname']}")
+        print(f"[COORDINATOR] Registered actor {actor_id} ({model_name}) on {self.actor_info[actor_id]['node_label']}")
         return actor_id
 
     def get_actor_count(self) -> int:
@@ -365,27 +463,16 @@ class PromptCoordinator:
     def _get_cluster_nodes(self) -> Dict[str, Any]:
         """Get information about all nodes in the cluster"""
         try:
-            # Get all nodes in the cluster
-            nodes = ray.nodes()
-            node_info = {}
-            
-            for node in nodes:
-                node_id = node['NodeID']
-                node_info[node_id] = {
-                    'hostname': node.get('Hostname', 'unknown'),
-                    'ip': node.get('NodeIP', 'unknown'),
-                    'alive': node.get('Alive', False),
-                    'resources': node.get('Resources', {}),
-                    'actor_count': 0  # Will be updated below
-                }
+            # Get all nodes in the cluster with proper labels
+            node_mapping = get_cluster_node_mapping()
             
             # Count actors per node
             for actor_id, info in self.actor_info.items():
                 node_id = info['node_id']
-                if node_id in node_info:
-                    node_info[node_id]['actor_count'] = node_info[node_id].get('actor_count', 0) + 1
+                if node_id in node_mapping:
+                    node_mapping[node_id]['actor_count'] = node_mapping[node_id].get('actor_count', 0) + 1
             
-            return node_info
+            return node_mapping
         except Exception as e:
             print(f"[WARNING] Could not get cluster nodes: {e}")
             return {}
@@ -429,7 +516,7 @@ class PromptCoordinator:
                 result = ray.get(future)
                 # Enhanced: get node info from actor response
                 print(f"[OK] [NODE - {i}] Response received from actor {i}")
-                print(f"[OK] [NODE - {i}] Node: {result['node_hostname']} ({result['node_ip']})")
+                print(f"[OK] [NODE - {i}] {result['node_label']}: {result['node_hostname']} ({result['node_ip']})")
                 print(f"[OK] [NODE - {i}] Model: {result['model_name']}")
                 print(f"[OK] [NODE - {i}] Response: {result['response'][:100]}{'...' if len(result['response']) > 100 else ''}")
                 
@@ -441,6 +528,7 @@ class PromptCoordinator:
                     'node_hostname': result['node_hostname'],
                     'node_ip': result['node_ip'],
                     'node_id': result['node_id'],
+                    'node_label': result['node_label'],
                     'model_name': result['model_name'],
                     'processing_time': result['processing_time']
                 })
@@ -455,6 +543,7 @@ class PromptCoordinator:
                     'node_hostname': 'unknown',
                     'node_ip': 'unknown',
                     'node_id': 'unknown',
+                    'node_label': 'Unknown Node',
                     'model_name': 'unknown',
                     'error': str(e)
                 })
@@ -476,12 +565,12 @@ class PromptCoordinator:
         for result in results:
             if result['status'] == 'success':
                 print(f"\n[MODEL: {result['model_name'].upper()}]")
-                print(f"   [NODE] Node: {result['node_hostname']} ({result['node_ip']})")
+                print(f"   [NODE] {result['node_label']}: {result['node_hostname']} ({result['node_ip']})")
                 print(f"   [TIME] Processing: {result['processing_time']:.2f}s")
                 print(f"   [RESPONSE] {result['response'][:100]}...")
             else:
                 print(f"\n[ERROR] [MODEL: {result['model_name']}]")
-                print(f"   [NODE] Node: {result['node_hostname']} ({result['node_ip']})")
+                print(f"   [NODE] {result['node_label']}: {result['node_hostname']} ({result['node_ip']})")
                 print(f"   [ERROR] {result['response']}")
         
         print(f"\n[OK] [HEAD NODE - REQUEST COMPLETED] All responses logged and consolidated")
