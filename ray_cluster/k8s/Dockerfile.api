@@ -1,0 +1,17 @@
+FROM ray-cluster-base:latest
+
+# Install Flask for the API server
+RUN pip install flask
+
+# Copy API server
+COPY k8s/api-server.py /app/
+COPY main.py /app/
+
+# Create logs directory
+RUN mkdir -p /app/logs
+
+# Expose API port
+EXPOSE 8000
+
+# Start the API server
+CMD ["python", "/app/api-server.py"] 

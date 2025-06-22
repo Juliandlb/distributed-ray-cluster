@@ -1,0 +1,77 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ray-head
+  namespace: ray-cluster
+  labels:
+    app: ray-head
+    node-type: head
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ray-head
+  template:
+    metadata:
+      labels:
+        app: ray-head
+        node-type: head
+    spec:
+      containers:
+      - name: ray-head
+        image: ray-cluster-head:latest
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 6379
+          name: ray
+        - containerPort: 8265
+          name: dashboard
+        - containerPort: 10001
+          name: object-store
+        - containerPort: 8000
+          name: api
+        env:
+        - name: RAY_DISABLE_DEDUP
+          value: "1"
+        - name: RAY_DISABLE_CUSTOM_LOGGER
+          value: "1"
+        - name: PYTHONUNBUFFERED
+          value: "1"
+        - name: RAY_ADDRESS
+          value: "0.0.0.0:6379"
+        volumeMounts:
+        - name: ray-config
+          mountPath: /app/config
+        - name: ray-models
+          mountPath: /app/models
+        - name: ray-temp
+          mountPath: /tmp/ray
+        resources:
+          requests:
+            memory: "2Gi"
+            cpu: "2"
+          limits:
+            memory: "4Gi"
+            cpu: "4"
+        livenessProbe:
+          exec:
+            command: ["/app/health_check.sh"]
+          initialDelaySeconds: 60
+          periodSeconds: 30
+        readinessProbe:
+          exec:
+            command: ["/app/health_check.sh"]
+          initialDelaySeconds: 30
+          periodSeconds: 10
+      volumes:
+      - name: ray-config
+        configMap:
+          name: ray-config
+      - name: ray-models
+        persistentVolumeClaim:
+          claimName: ray-models-pvc
+      - name: ray-temp
+        emptyDir: {}
+      # Ensure head node runs on a specific node (optional)
+      nodeSelector:
+        node-role.kubernetes.io/control-plane: "" 

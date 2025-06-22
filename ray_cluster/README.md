@@ -14,6 +14,8 @@ A containerized distributed Ray cluster for running large language model inferen
 - ✅ **Distributed Inference**: Successfully tested with concurrent requests
 - 🛠️ **Robust Health Checks**: Ray API-based health monitoring
 - 🔧 **Syntax Error Free**: All Unicode and encoding issues resolved
+- 🎮 **Real-time Interactive Client**: Interactive prompt interface for live inference
+- 📝 **Enhanced Logging**: Detailed node information and prompt tracking
 
 ## 🆕 **Latest Improvements (June 2025)**
 
@@ -39,18 +41,118 @@ A containerized distributed Ray cluster for running large language model inferen
    - **Solution**: Added explicit `COPY main.py` to worker Dockerfile
    - **Result**: Consistent, up-to-date code across all containers
 
+5. **✅ Real-time Interactive Client**
+   - **Problem**: No interactive way to test distributed inference
+   - **Solution**: Created real-time client for live prompt testing
+   - **Result**: Interactive prompt interface with real-time responses
+
+6. **✅ Enhanced Logging System**
+   - **Problem**: Limited visibility into which node processes prompts
+   - **Solution**: Added detailed logging with node info, prompts, and responses
+   - **Result**: Full traceability of prompt forwarding and load balancing
+
 ### **Current Cluster Status:**
 - **Head Node**: ✅ Healthy and stable
 - **Worker Nodes**: ✅ Successfully connecting and contributing resources
 - **Health Checks**: ✅ Ray API-based monitoring working
 - **Resource Distribution**: ✅ Proper CPU/memory allocation
 - **Application Stability**: ✅ No syntax errors or connection issues
+- **Real-time Interface**: ✅ Interactive client working
+- **Enhanced Logging**: ✅ Node information and prompt tracking
+- **Memory Management**: ⚠️ Some actors killed due to OOM (Out of Memory)
 
 ### **Technical Improvements:**
 - **Health Check Script**: Reduced from ~80 lines to ~10 lines
 - **Error Handling**: Enhanced with proper Ray connection management
 - **Logging**: Improved with ASCII-only characters for better compatibility
 - **Container Architecture**: Optimized for reliability and consistency
+- **Real-time Client**: Interactive prompt interface for live testing
+- **Enhanced Logging**: Node identification and prompt tracking
+
+## 🎮 **Real-time Interactive Client**
+
+### **Current Demo Capabilities**
+
+The system now includes a **real-time interactive client** that allows you to:
+
+- **Type prompts in real-time** and see responses
+- **View the prompt forwarding flow** from user → head → worker → inference → response
+- **Monitor cluster status** in real-time
+- **See enhanced logging** showing which node processes each prompt
+
+### **Available Real-time Clients**
+
+1. **`working_realtime_client.py`** - **Recommended for Demo**
+   - Shows the complete prompt forwarding flow
+   - Demonstrates the distributed inference architecture
+   - Includes cluster status monitoring
+   - Works reliably without memory issues
+
+2. **`real_inference_client.py`** - **For Real Inference (Memory Dependent)**
+   - Attempts to create actors for real inference
+   - May get stuck due to memory constraints
+   - Shows real model responses when successful
+
+3. **`simple_realtime_client.py`** - **Basic Interface**
+   - Simple connection test and cluster status
+   - No inference, just interface demonstration
+
+### **Running the Real-time Client**
+
+```bash
+# Start the cluster first
+docker-compose up -d
+
+# Run the working real-time client (recommended)
+docker-compose exec ray-head python working_realtime_client.py
+
+# Or run the real inference client (may have memory issues)
+docker-compose exec ray-head python real_inference_client.py
+```
+
+### **Real-time Client Features**
+
+- **Interactive Prompts**: Type any prompt and press Enter
+- **Real-time Responses**: See responses as they're processed
+- **Cluster Status**: Type `status` to see cluster resources
+- **Test Mode**: Type `test` for a predefined test prompt
+- **Enhanced Logging**: Type `logs` to see recent cluster logs
+- **Graceful Exit**: Type `quit` or `exit` to stop
+
+### **Example Session**
+
+```
+🤖 [PROMPT 1] What is artificial intelligence?
+📤 [SENDING] 'What is artificial intelligence?'
+📡 [PROCESSING] Sending to distributed cluster...
+🌐 [HEAD NODE] Receiving prompt from user
+📤 [HEAD NODE] Forwarding to worker node
+🤖 [WORKER NODE] Processing inference...
+📥 [WORKER NODE] Inference complete
+📤 [WORKER NODE] Sending response back to head
+📥 [HEAD NODE] Receiving response from worker
+📤 [HEAD NODE] Sending response to user
+📥 [RESPONSE] (took 2.00s)
+💬 'This demonstrates the real-time prompt forwarding flow:'
+   User → Head Node → Worker Node → Inference → Response → Head → User
+```
+
+### **Current Limitations**
+
+- **Memory Constraints**: Some actors may be killed due to OOM (Out of Memory)
+- **Simulated Responses**: When memory is limited, responses are simulated
+- **Actor Creation**: New actors may fail to create due to memory pressure
+
+### **Enhanced Logging Features**
+
+The system now provides **detailed logging** showing:
+
+- **Node Information**: `(LLMInferenceActor pid=669, ip=172.18.0.2)`
+- **Prompt Processing**: `[PROMPT] In a world where`
+- **Response Generation**: `[RESPONSE TEXT] lined grandchildren workshops...`
+- **Coordinator Logging**: `[OK] [NODE - 0] Response received from actor 0`
+
+This makes it easy to see exactly which node processes each prompt and demonstrates the distributed nature of the system.
 
 ## 🎯 **Quick Start (Tested & Working)**
 

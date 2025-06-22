@@ -14,8 +14,8 @@ services:
       - RAY_DISABLE_DEDUP=1
       - RAY_DISABLE_CUSTOM_LOGGER=1
       - PYTHONUNBUFFERED=1
-      - RAY_memory_usage_threshold=0.8  # Lower threshold to prevent OOM
-      - RAY_memory_monitor_refresh_ms=1000  # Check memory every second
+      - RAY_memory_usage_threshold=0.9  # Increased threshold
+      - RAY_memory_monitor_refresh_ms=2000  # Check memory every 2 seconds
       - RAY_object_spilling_config={"type":"filesystem","params":{"directory_path":"/tmp/ray/spill"}}
     volumes:
       - ./models:/app/models
@@ -25,11 +25,12 @@ services:
     deploy:
       resources:
         limits:
-          memory: 2G
+          memory: 4G  # Increased to 4GB
           cpus: '2.0'
         reservations:
-          memory: 1G
+          memory: 2G  # Increased to 2GB
           cpus: '1.0'
+    shm_size: 1gb  # Add shared memory
     healthcheck:
       test: ["CMD", "/app/health_check.sh"]
       interval: 30s
@@ -50,8 +51,8 @@ services:
       - RAY_DISABLE_DEDUP=1
       - RAY_DISABLE_CUSTOM_LOGGER=1
       - PYTHONUNBUFFERED=1
-      - RAY_memory_usage_threshold=0.8  # Lower threshold to prevent OOM
-      - RAY_memory_monitor_refresh_ms=1000  # Check memory every second
+      - RAY_memory_usage_threshold=0.9  # Increased threshold
+      - RAY_memory_monitor_refresh_ms=2000  # Check memory every 2 seconds
       - RAY_object_spilling_config={"type":"filesystem","params":{"directory_path":"/tmp/ray/spill"}}
     depends_on:
       ray-head:
@@ -64,11 +65,12 @@ services:
     deploy:
       resources:
         limits:
-          memory: 2G
+          memory: 4G  # Increased to 4GB
           cpus: '2.0'
         reservations:
-          memory: 1G
+          memory: 2G  # Increased to 2GB
           cpus: '1.0'
+    shm_size: 1gb  # Add shared memory
     healthcheck:
       test: ["CMD", "/app/health_check.sh"]
       interval: 30s

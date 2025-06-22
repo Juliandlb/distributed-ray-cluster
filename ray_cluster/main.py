@@ -137,6 +137,7 @@ def log_memory_usage(node_id, model_name, pid, stage, initial_memory=None, final
 @ray.remote
 class LLMInferenceActor:
     def __init__(self, model_name: str, model_path: str = None):
+        self.node_info = get_node_info()
         print(f"[ACTOR CREATION] {model_name} Model Instance")
         print(f"[NODE] Node: {self.node_info['hostname']} ({self.node_info['ip_address']})")
         self.model_name = model_name
@@ -194,18 +195,16 @@ class LLMInferenceActor:
     def generate(self, prompt: str) -> str:
         """Generate text based on the prompt"""
         timestamp = datetime.now().strftime('%H:%M:%S.%f')[:-3]
-        
-        print(f"[NODE OPERATION] {timestamp}")
-        print(f"[NODE] Node: {get_node_info()['hostname']} ({get_node_info()['ip_address']})")
-        print(f"[MODEL] Model: {self.model_name}")
-        
+        node_info = get_node_info()
+        print(f"[PROMPT RECEIVED] {timestamp}")
+        print(f"[NODE INFO] Hostname: {node_info['hostname']}, IP: {node_info['ip_address']}, Ray Node ID: {node_info['ray_node_id']}")
+        print(f"[MODEL] {self.model_name}")
+        print(f"[PROMPT] {prompt}")
         # Get memory usage before inference
         pre_inference_memory = self._get_memory_usage()
-        
         # Generate response based on model type
         try:
             inputs = self.tokenizer(prompt, return_tensors="pt")
-            
             with torch.no_grad():
                 outputs = self.model.generate(
                     inputs.input_ids,
@@ -215,23 +214,20 @@ class LLMInferenceActor:
                     do_sample=True,
                     pad_token_id=self.tokenizer.eos_token_id
                 )
-            
             generated_text = self.tokenizer.decode(outputs[0], skip_special_tokens=True)
             response = generated_text[len(prompt):].strip()
-            
         except Exception as e:
             print(f"[ERROR] Generation failed: {e}")
             response = f"Error generating response: {str(e)}"
-        
         # Get memory usage after inference
         post_inference_memory = self._get_memory_usage()
-        
         # Enhanced output logging
         print(f"[OK] [OPERATION COMPLETED] {datetime.now().strftime('%H:%M:%S.%f')[:-3]}")
-        print(f"[NODE] Node: {get_node_info()['hostname']} ({get_node_info()['ip_address']})")
-        print(f"[MODEL] Model: {self.model_name}")
+        print(f"[NODE INFO] Hostname: {node_info['hostname']}, IP: {node_info['ip_address']}, Ray Node ID: {node_info['ray_node_id']}")
+        print(f"[MODEL] {self.model_name}")
         print(f"[RESPONSE] Generated {len(response)} characters")
-        
+        print(f"[RESPONSE TEXT] {response[:100]}{'...' if len(response) > 100 else ''}")
+        sys.stdout.flush()
         return response
 
 @ray.remote
@@ -247,24 +243,23 @@ class PromptCoordinator:
     def process_prompt(self, prompt: str) -> Dict[str, Any]:
         """Process a prompt using all available actors"""
         request_timestamp = datetime.now().strftime('%H:%M:%S.%f')[:-3]
-        
         print(f"[COORDINATOR] Processing prompt: '{prompt[:50]}...'")
         print(f"[TIME] Timestamp: {request_timestamp}")
         print(f"[DISTRIBUTION] Distributing to {len(self.actors)} nodes...")
-        
         # Submit tasks to all actors
         futures = []
         for i, actor in enumerate(self.actors):
             future = actor.generate.remote(prompt)
             futures.append(future)
-        
         # Collect results
         results = []
         successful_responses = 0
-        
         for i, future in enumerate(futures):
             try:
                 result = ray.get(future)
+                # Enhanced: get node info from actor (if possible)
+                print(f"[OK] [NODE - {i}] Response received from actor {i}")
+                print(f"[OK] [NODE - {i}] Response: {result[:100]}{'...' if len(result) > 100 else ''}")
                 results.append({
                     'actor_id': i,
                     'response': result,
@@ -272,7 +267,6 @@ class PromptCoordinator:
                     'status': 'success'
                 })
                 successful_responses += 1
-                print(f"[OK] [NODE - {i}] Response received")
             except Exception as e:
                 results.append({
                     'actor_id': i,
@@ -281,7 +275,6 @@ class PromptCoordinator:
                     'status': 'error'
                 })
                 print(f"[ERROR] [NODE - {i}] Failed: {e}")
-        
         # Consolidate results
         consolidated_result = {
             'prompt': prompt,
@@ -533,7 +526,7 @@ def main():
     config = {}
     if args.config:
         try:
-        config = load_config(args.config)
+            config = load_config(args.config)
             print(f"✅ Configuration loaded from {args.config}")
         except Exception as e:
             print(f"❌ Failed to load configuration: {e}")
@@ -582,7 +575,11 @@ def main():
         for i, prompt in enumerate(example_prompts):
             print(f"[HEAD] Processing prompt {i+1}: '{prompt[:30]}...'")
             result = ray.get(coordinator.process_prompt.remote(prompt))
-            print(f"[HEAD] Result {i+1}: {result[:100]}...")
+            if isinstance(result, dict) and 'consolidated_response' in result:
+                response = result['consolidated_response']
+                print(f"[HEAD] Result {i+1}: {response[:100]}...")
+            else:
+                print(f"[HEAD] Result {i+1}: {str(result)[:100]}...")
         
         print("[HEAD] Example processing completed")
         
@@ -628,7 +625,11 @@ def main():
         for i, prompt in enumerate(example_prompts):
             print(f"[WORKER] Processing prompt {i+1}: '{prompt[:30]}...'")
             result = ray.get(coordinator.process_prompt.remote(prompt))
-            print(f"[WORKER] Result {i+1}: {result[:100]}...")
+            if isinstance(result, dict) and 'consolidated_response' in result:
+                response = result['consolidated_response']
+                print(f"[WORKER] Result {i+1}: {response[:100]}...")
+            else:
+                print(f"[WORKER] Result {i+1}: {str(result)[:100]}...")
         
         print("[WORKER] Example processing completed")
         

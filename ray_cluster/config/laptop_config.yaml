@@ -3,12 +3,17 @@ ray:
   head:
     port: 6379
     dashboard_port: 8265
-    object_store_memory: 500000000  # 500MB (reduced from 1GB)
-    num_cpus: 2  # Reduced from 4
+    object_store_memory: 200000000  # Reduced to 200MB
+    num_cpus: 1  # Reduced to 1 CPU
     temp_dir: /tmp/ray
     include_dashboard: true
     log_to_driver: true
     logging_level: INFO
+  
+  cluster:
+    max_workers: 2  # Reduced for laptop
+    auto_scaling: true
+    min_workers: 0  # Start with no workers
     
   worker:
     head_address: ${RAY_HEAD_ADDRESS}
@@ -22,13 +27,14 @@ ray:
 
 # Load only the smallest model for testing
 models:
-  preload: ["tiny-gpt2"]  # Only load the smallest model
+  preload: []  # Don't preload any models for testing
   cache_dir: "/app/models"
 
 # Resource limits for containers
 resources:
-  memory_limit: "2GB"  # Limit memory usage
-  cpu_limit: "2"       # Limit CPU usage
+  memory: 1000000000  # Reduced to 1GB
+  cpu: 1  # Reduced to 1 CPU
+  gpu: 0  # Head node typically doesn't need GPU
 
 logging:
   level: INFO

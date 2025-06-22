@@ -13,7 +13,7 @@ if [ -z "$RAY_HEAD_ADDRESS" ]; then
 fi
 
 # Create necessary directories
-mkdir -p /tmp/ray /app/logs
+mkdir -p /tmp/ray /tmp/ray/spill /app/logs
 
 # Wait for head node to be ready
 echo "Waiting for head node to be ready..."
