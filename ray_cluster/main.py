@@ -240,17 +240,55 @@ class PromptCoordinator:
         print(f"[NODE] Node: {get_node_info()['hostname']} ({get_node_info()['ip_address']})")
         print(f"[MODELS] Available Models: {list(self.actors_dict.keys())}")
     
+    def register_actor(self, actor: ray.actor.ActorHandle, model_name: str = None):
+        """Register a new actor from a worker node"""
+        actor_id = len(self.actors)
+        self.actors.append(actor)
+        actor_key = f"actor_{actor_id}"
+        self.actors_dict[actor_key] = actor
+        
+        print(f"[COORDINATOR] Registered new actor: {actor_key}")
+        print(f"[COORDINATOR] Total actors: {len(self.actors)}")
+        print(f"[COORDINATOR] Available models: {list(self.actors_dict.keys())}")
+        
+        return actor_id
+    
+    def get_actor_count(self) -> int:
+        """Get the number of available actors"""
+        return len(self.actors)
+    
+    def get_actor_info(self) -> Dict[str, Any]:
+        """Get information about available actors"""
+        return {
+            'total_actors': len(self.actors),
+            'actor_keys': list(self.actors_dict.keys()),
+            'node_info': get_node_info()
+        }
+    
     def process_prompt(self, prompt: str) -> Dict[str, Any]:
         """Process a prompt using all available actors"""
         request_timestamp = datetime.now().strftime('%H:%M:%S.%f')[:-3]
         print(f"[COORDINATOR] Processing prompt: '{prompt[:50]}...'")
         print(f"[TIME] Timestamp: {request_timestamp}")
         print(f"[DISTRIBUTION] Distributing to {len(self.actors)} nodes...")
+        
+        if not self.actors:
+            return {
+                'prompt': prompt,
+                'request_timestamp': request_timestamp,
+                'total_actors': 0,
+                'successful_responses': 0,
+                'results': [],
+                'consolidated_response': "No inference actors available. Please wait for worker nodes to join.",
+                'error': 'NO_ACTORS_AVAILABLE'
+            }
+        
         # Submit tasks to all actors
         futures = []
         for i, actor in enumerate(self.actors):
             future = actor.generate.remote(prompt)
             futures.append(future)
+        
         # Collect results
         results = []
         successful_responses = 0
@@ -275,6 +313,7 @@ class PromptCoordinator:
                     'status': 'error'
                 })
                 print(f"[ERROR] [NODE - {i}] Failed: {e}")
+        
         # Consolidate results
         consolidated_result = {
             'prompt': prompt,
@@ -304,11 +343,11 @@ class PromptCoordinator:
         return consolidated_result
 
 def run_head_mode(config: Dict[str, Any]):
-    """Run the application in head mode."""
+    """Run the application in head mode (coordinator only)."""
     print("\n" + "="*80)
-    print("🎯 [HEAD NODE STARTING] Distributed Ray Cluster")
+    print("🎯 [HEAD NODE STARTING] Distributed Ray Cluster Coordinator")
     print("="*80)
-    logger.info("Starting Ray cluster in head mode")
+    logger.info("Starting Ray cluster coordinator in head mode")
     
     # Initialize Ray in head mode
     ray.init(
@@ -321,99 +360,28 @@ def run_head_mode(config: Dict[str, Any]):
     print("\n✅ [CLUSTER STATUS] Ray Cluster Started Successfully")
     logger.info("Ray cluster initialized in head mode")
     
-    # Create inference actors with different model sizes
-    print("\n🤖 [MODEL DEPLOYMENT] Creating Model Instances Across Cluster")
-    logger.info("Creating model instances...")
+    # Head node no longer loads models - it's a pure coordinator
+    print("\n🎯 [COORDINATOR MODE] Head Node is Coordinator Only")
+    print("   📡 Waiting for worker nodes to join and register models...")
+    print("   🤖 No models loaded on head node (memory optimized)")
+    logger.info("Head node running in coordinator mode - no models loaded")
     
-    model_names = config.get('models', {}).get('preload', ["tiny-gpt2", "distilbert", "flan-t5-small"])
-    actors = []
-    
-    for model_name in model_names:
-        if model_name in MODEL_CONFIGS:
-            actor = LLMInferenceActor.remote(model_name)
-            actors.append(actor)
-            print(f"   ✅ Created actor for model: {model_name}")
-            logger.info(f"Created actor for model: {model_name}")
-        else:
-            print(f"   ⚠️  Unknown model: {model_name}")
-            logger.warning(f"Unknown model: {model_name}")
-    
-    if not actors:
-        print("   ❌ No valid models to load")
-        logger.error("No valid models to load")
-        return
-    
-    print(f"   📊 Total actors created: {len(actors)}")
-    
-    # Create PromptCoordinator for real-time prompting
+    # Create PromptCoordinator that will discover worker actors
     print(f"\n🎯 [REALTIME PROMPT SYSTEM] Initializing Prompt Coordinator...")
     
     # Create the prompt coordinator as a named actor in the default namespace
-    prompt_coordinator = PromptCoordinator.options(name="prompt_coordinator").remote(actors)
+    # It will start with no actors and discover them as workers join
+    prompt_coordinator = PromptCoordinator.options(name="prompt_coordinator").remote([])
     print(f"✅ Prompt Coordinator created and registered as 'prompt_coordinator'")
-    print(f"📡 Coordinator can be accessed by clients for real-time prompting")
+    print(f"📡 Coordinator will discover worker actors as they join")
     print(f"🎮 Use realtime_prompt_client.py to send prompts interactively")
-    
-    # Store coordinator reference for potential future use
-    coordinator_ref = prompt_coordinator
-    
-    # Example prompts
-    prompts = [
-        "What is machine learning?",
-        "Explain quantum computing",
-        "Tell me about Ray",
-        "What is distributed computing?",
-        "Explain LLM inference"
-    ]
-    
-    # Dispatch inference calls concurrently
-    print(f"\n🚀 [DISTRIBUTED INFERENCE] Starting Concurrent Processing")
-    print(f"   📝 Total prompts to process: {len(prompts)}")
-    print(f"   🤖 Available actors: {len(actors)}")
-    print(f"   🔄 Distribution strategy: Round-robin")
-    logger.info("Starting concurrent inference...")
-    
-    futures = []
-    task_assignments = []
-    
-    for i, prompt in enumerate(prompts):
-        # Round-robin assignment to actors
-        actor_index = i % len(actors)
-        actor = actors[actor_index]
-        future = actor.generate.remote(prompt)
-        futures.append(future)
-        task_assignments.append((i, prompt, actor_index))
-        
-        print(f"   📋 Task {i+1}: '{prompt[:30]}...' -> Actor {actor_index+1} ({model_names[actor_index]})")
-    
-    print(f"\n⏳ [PROCESSING] Waiting for all tasks to complete...")
-    
-    # Get results
-    results = ray.get(futures)
-    
-    # Print comprehensive results
-    print(f"\n" + "="*80)
-    print("📊 [DISTRIBUTED INFERENCE RESULTS]")
-    print("="*80)
-    
-    total_time = 0
-    for i, (prompt, result) in enumerate(zip(prompts, results)):
-        actor_index = task_assignments[i][2]
-        print(f"\n🔍 [TASK {i+1} RESULT]")
-        print(f"   📝 Prompt: '{prompt}'")
-        print(f"   🤖 Processed by: Actor {actor_index+1} ({model_names[actor_index]})")
-        print(f"   💬 Response: '{result}'")
-        print(f"   {'─'*60}")
-    
-    print(f"\n✅ [SUMMARY] All {len(prompts)} tasks completed successfully!")
-    print(f"   📊 Tasks distributed across {len(actors)} actors")
-    print(f"   🤖 Models used: {', '.join(model_names)}")
     
     # Keep the cluster running for worker nodes to join
     print(f"\n" + "="*80)
     print("🔄 [CLUSTER RUNNING] Ready for Worker Nodes")
     print("="*80)
-    print("Cluster is ready for worker nodes to join")
+    print("Cluster coordinator is ready for worker nodes to join")
+    print("Worker nodes will load models and register actors")
     print("Press Ctrl+C to stop the cluster")
     
     try:
@@ -422,6 +390,15 @@ def run_head_mode(config: Dict[str, Any]):
             # Print cluster status
             cluster_resources = ray.cluster_resources()
             print(f"\n📈 [CLUSTER STATUS] Resources: {cluster_resources}")
+            
+            # Try to get the coordinator to check available actors
+            try:
+                coordinator = ray.get_actor("prompt_coordinator")
+                actor_count = ray.get(coordinator.get_actor_count.remote())
+                print(f"🤖 [ACTOR STATUS] Available inference actors: {actor_count}")
+            except Exception as e:
+                print(f"🤖 [ACTOR STATUS] No actors available yet: {e}")
+                
     except KeyboardInterrupt:
         print("\n🛑 [SHUTDOWN] Shutting down Ray cluster...")
         ray.shutdown()
@@ -468,6 +445,27 @@ def run_worker_mode(config: Dict[str, Any]):
         return
     
     print(f"   📊 Total actors created on worker: {len(actors)}")
+    
+    # Register actors with the coordinator
+    print(f"\n📡 [ACTOR REGISTRATION] Registering Actors with Coordinator")
+    try:
+        coordinator = ray.get_actor("prompt_coordinator")
+        print(f"   ✅ Found coordinator, registering {len(actors)} actors...")
+        
+        for i, actor in enumerate(actors):
+            actor_id = ray.get(coordinator.register_actor.remote(actor, model_names[i]))
+            print(f"   ✅ Registered actor {i+1}/{len(actors)} with ID: {actor_id}")
+        
+        print(f"   🎯 All actors registered successfully!")
+        
+        # Get coordinator status
+        actor_info = ray.get(coordinator.get_actor_info.remote())
+        print(f"   📊 Coordinator reports {actor_info['total_actors']} total actors available")
+        
+    except Exception as e:
+        print(f"   ❌ Failed to register actors with coordinator: {e}")
+        print(f"   ⚠️  Actors will work locally but not be coordinated")
+        logger.error(f"Failed to register actors with coordinator: {e}")
     
     print(f"\n" + "="*80)
     print("🟢 [WORKER NODE READY] Active and Waiting for Tasks")

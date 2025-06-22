@@ -1,40 +1,46 @@
 # Laptop-optimized configuration for limited resources
+# NEW ARCHITECTURE: Head node is coordinator-only, workers handle inference
 ray:
   head:
     port: 6379
     dashboard_port: 8265
-    object_store_memory: 200000000  # Reduced to 200MB
-    num_cpus: 1  # Reduced to 1 CPU
+    object_store_memory: 100000000  # Reduced to 100MB (coordinator only)
+    num_cpus: 1  # Reduced to 1 CPU (coordinator only)
     temp_dir: /tmp/ray
     include_dashboard: true
     log_to_driver: true
     logging_level: INFO
   
   cluster:
-    max_workers: 2  # Reduced for laptop
+    max_workers: 3  # Increased for better distribution
     auto_scaling: true
     min_workers: 0  # Start with no workers
     
   worker:
     head_address: ${RAY_HEAD_ADDRESS}
     port: 0
-    object_store_memory: 500000000  # 500MB
-    num_cpus: 2  # Reduced from 4
+    object_store_memory: 800000000  # Increased to 800MB (handles models)
+    num_cpus: 2  # 2 CPUs for inference
     num_gpus: 0  # No GPU
     temp_dir: /tmp/ray
     log_to_driver: false
     logging_level: INFO
 
-# Load only the smallest model for testing
+# Models are now loaded only on worker nodes
 models:
-  preload: []  # Don't preload any models for testing
+  preload: ["tiny-gpt2"]  # Load tiny-gpt2 on workers
   cache_dir: "/app/models"
 
 # Resource limits for containers
 resources:
-  memory: 1000000000  # Reduced to 1GB
-  cpu: 1  # Reduced to 1 CPU
-  gpu: 0  # Head node typically doesn't need GPU
+  # Head node (coordinator only) - very lightweight
+  head_memory: 500000000  # 500MB for coordinator
+  head_cpu: 1  # 1 CPU for coordination
+  
+  # Worker nodes (inference) - more resources
+  worker_memory: 2000000000  # 2GB for model inference
+  worker_cpu: 2  # 2 CPUs for inference
+  gpu: 0  # No GPU
 
 logging:
   level: INFO

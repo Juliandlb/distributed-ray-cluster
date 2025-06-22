@@ -1,7 +1,7 @@
 version: '3.8'
 
 services:
-  # Ray Head Node (laptop-optimized)
+  # Ray Head Node (coordinator only - lightweight)
   ray-head:
     build:
       context: .
@@ -14,8 +14,8 @@ services:
       - RAY_DISABLE_DEDUP=1
       - RAY_DISABLE_CUSTOM_LOGGER=1
       - PYTHONUNBUFFERED=1
-      - RAY_memory_usage_threshold=0.9  # Increased threshold
-      - RAY_memory_monitor_refresh_ms=2000  # Check memory every 2 seconds
+      - RAY_memory_usage_threshold=0.9
+      - RAY_memory_monitor_refresh_ms=2000
       - RAY_object_spilling_config={"type":"filesystem","params":{"directory_path":"/tmp/ray/spill"}}
     volumes:
       - ./models:/app/models
@@ -25,12 +25,12 @@ services:
     deploy:
       resources:
         limits:
-          memory: 4G  # Increased to 4GB
-          cpus: '2.0'
+          memory: 1G  # Reduced to 1GB (coordinator only)
+          cpus: '1.0'  # Reduced to 1 CPU
         reservations:
-          memory: 2G  # Increased to 2GB
-          cpus: '1.0'
-    shm_size: 1gb  # Add shared memory
+          memory: 500M  # Reduced to 500MB
+          cpus: '0.5'
+    shm_size: 512mb  # Reduced shared memory
     healthcheck:
       test: ["CMD", "/app/health_check.sh"]
       interval: 30s
@@ -39,7 +39,7 @@ services:
       start_period: 60s
     restart: unless-stopped
 
-  # Single Ray Worker Node (laptop-optimized)
+  # Ray Worker Node (inference - more resources)
   ray-worker-1:
     build:
       context: .
@@ -51,8 +51,8 @@ services:
       - RAY_DISABLE_DEDUP=1
       - RAY_DISABLE_CUSTOM_LOGGER=1
       - PYTHONUNBUFFERED=1
-      - RAY_memory_usage_threshold=0.9  # Increased threshold
-      - RAY_memory_monitor_refresh_ms=2000  # Check memory every 2 seconds
+      - RAY_memory_usage_threshold=0.9
+      - RAY_memory_monitor_refresh_ms=2000
       - RAY_object_spilling_config={"type":"filesystem","params":{"directory_path":"/tmp/ray/spill"}}
     depends_on:
       ray-head:
@@ -65,12 +65,12 @@ services:
     deploy:
       resources:
         limits:
-          memory: 4G  # Increased to 4GB
-          cpus: '2.0'
+          memory: 3G  # Increased to 3GB (handles models)
+          cpus: '2.0'  # 2 CPUs for inference
         reservations:
           memory: 2G  # Increased to 2GB
           cpus: '1.0'
-    shm_size: 1gb  # Add shared memory
+    shm_size: 1gb  # Keep shared memory for models
     healthcheck:
       test: ["CMD", "/app/health_check.sh"]
       interval: 30s
