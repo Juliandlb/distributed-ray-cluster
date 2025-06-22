@@ -152,7 +152,7 @@ docker exec -it ray-cluster-head-laptop python working_realtime_prompts.py
 - **Actor Discovery**: See how many inference actors are available
 - **Cluster Status**: Type `status` to see cluster resources and node information
 - **Actor Info**: Type `actors` to see registered actors and their nodes
-- **Node Information**: See which node answered each prompt
+- **Node Information**: See which node answered each prompt with clear labels (Head Node, Worker Node #1, etc.)
 - **Test Mode**: Type `test` for a predefined test prompt
 - **Enhanced Logging**: Type `logs` to see recent cluster logs
 - **Graceful Exit**: Type `quit` or `exit` to stop
@@ -172,11 +172,12 @@ docker exec -it ray-cluster-head-laptop python working_realtime_prompts.py
 
 💬 [RESPONSES]
    ✅ Actor 0 (gpt2)
-      Node: ray-cluster-worker-laptop (172.18.0.2)
+      Worker Node #1: 8889a38cbff6 (172.18.0.3)
       Processing time: 1.23s
       Response: Artificial intelligence (AI) is a branch of computer science...
 
-🎯 [ANSWERED BY] Node: ray-cluster-worker-laptop (172.18.0.2)
+🎯 [ANSWERED BY] Worker Node #1
+   Hostname: 8889a38cbff6 (172.18.0.3)
    Model: gpt2
    Processing time: 1.23s
 
@@ -192,18 +193,20 @@ Type `status` to see comprehensive cluster information:
 ============================================================
 🔧 [RESOURCES]
    CPU: 3.0
-   Memory: 3.0 GB
+   Memory: 3.5 GB
 
 🖥️  [NODES] Total: 2
-   🟢 ray-cluster-head-laptop (172.18.0.3)
+   🟢 Head Node (ray-cluster-head-laptop)
+      IP: 172.18.0.3
       Actors: 0
       Resources: CPU=1.0, Memory=1.0GB
-   🟢 ray-cluster-worker-laptop (172.18.0.2)
+   🟢 Worker Node #1 (ray-cluster-worker-laptop)
+      IP: 172.18.0.2
       Actors: 1
       Resources: CPU=2.0, Memory=2.0GB
 
 🤖 [ACTORS] Total: 1
-   Actor 0: gpt2 on ray-cluster-worker-laptop
+   Actor 0: gpt2 on Worker Node #1
 ============================================================
 ```
 
@@ -214,6 +217,8 @@ Type `status` to see comprehensive cluster information:
 - **Memory Optimized**: Head node lightweight, workers get more memory
 - **Dynamic Scaling**: Add/remove workers without restarting head
 - **Actor Discovery**: Automatic registration of worker actors
+- **Enhanced Node Labeling**: Clear identification of Head Node vs Worker Node #1, #2, etc.
+- **Cluster Visibility**: See exactly which node answered each prompt with hostname and IP
 
 ## 🎯 **Quick Start (Tested & Working)**
 
