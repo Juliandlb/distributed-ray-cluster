@@ -15,7 +15,7 @@ This guide breaks down the implementation of the distributed Ray cluster demo wi
 ### **Before (Old Architecture)**
 ```
 Head Node: 2-4GB memory
-├── Loads models (tiny-gpt2, distilbert, etc.)
+├── Loads models (gpt2, distilbert, etc.)
 ├── Creates inference actors
 ├── Handles coordination
 └── Limited to 1-2 workers due to memory
@@ -35,7 +35,7 @@ Head Node: 500MB-1GB memory (Coordinator Only)
 └── Can support many workers
 
 Worker Nodes: 2-3GB memory each (Inference Engines)
-├── Load models (tiny-gpt2, etc.)
+├── Load models (gpt2, etc.)
 ├── Create inference actors
 ├── Register actors with coordinator
 └── Handle all inference tasks
@@ -208,7 +208,7 @@ docker logs ray-cluster-worker-laptop
 🔧 [WORKER NODE STARTING] Joining Distributed Cluster
 ✅ [CLUSTER CONNECTION] Worker Node Successfully Joined Cluster
 🤖 [MODEL DEPLOYMENT] Creating Model Instances on Worker Node
-   ✅ Created actor for model: tiny-gpt2
+   ✅ Created actor for model: gpt2
 📡 [ACTOR REGISTRATION] Registering Actors with Coordinator
    ✅ Found coordinator, registering 1 actors...
    ✅ Registered actor 1/1 with ID: 0

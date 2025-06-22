@@ -68,7 +68,7 @@ A containerized distributed Ray cluster for running large language model inferen
 ### **Before (Old Architecture):**
 ```
 Head Node: 2-4GB memory
-├── Loads models (tiny-gpt2, distilbert, etc.)
+├── Loads models (gpt2, distilbert, etc.)
 ├── Creates inference actors
 ├── Handles coordination
 └── Limited to 1-2 workers due to memory
@@ -88,7 +88,7 @@ Head Node: 500MB-1GB memory (Coordinator Only)
 └── Can support many workers
 
 Worker Nodes: 2-3GB memory each (Inference Engines)
-├── Load models (tiny-gpt2, etc.)
+├── Load models (gpt2, etc.)
 ├── Create inference actors
 ├── Register actors with coordinator
 └── Handle all inference tasks
@@ -234,7 +234,7 @@ docker logs ray-cluster-worker-laptop
 🔧 [WORKER NODE STARTING] Joining Distributed Cluster
 ✅ [CLUSTER CONNECTION] Worker Node Successfully Joined Cluster
 🤖 [MODEL DEPLOYMENT] Creating Model Instances on Worker Node
-   ✅ Created actor for model: tiny-gpt2
+   ✅ Created actor for model: gpt2
 📡 [ACTOR REGISTRATION] Registering Actors with Coordinator
    ✅ Found coordinator, registering 1 actors...
    ✅ Registered actor 1/1 with ID: 0
@@ -274,7 +274,7 @@ The cluster successfully processed **real inference requests** with the new arch
 
 ### **Cluster Performance**
 - **Head Node**: 1 CPU, ~500MB memory, coordinator only
-- **Worker Node**: 2 CPUs, ~2.5GB memory, tiny-gpt2 model loaded
+- **Worker Node**: 2 CPUs, ~2.5GB memory, gpt2 model loaded
 - **Total Cluster**: 3 CPUs, ~3GB memory, distributed processing
 - **Response Time**: Fast inference with optimized memory usage
 
@@ -283,7 +283,7 @@ The cluster successfully processed **real inference requests** with the new arch
 The cluster consists of:
 - **Head Node (Coordinator)**: Manages the cluster, provides dashboard, coordinates tasks, discovers worker actors
 - **Worker Nodes (Inference Engines)**: Load models, create inference actors, register with coordinator, execute inference tasks
-- **Models**: LLM models (tiny-gpt2, etc.) loaded only on worker nodes
+- **Models**: LLM models (gpt2, etc.) loaded only on worker nodes
 
 ## Features
 
@@ -332,7 +332,7 @@ ray:
     num_cpus: 2  # 2 CPUs for inference
 
 models:
-  preload: ["tiny-gpt2"]  # Load tiny-gpt2 on workers
+  preload: ["gpt2"]  # Load gpt2 on workers for better responses
   cache_dir: "/app/models"
 
 resources:
@@ -484,11 +484,16 @@ docker logs ray-cluster-head-laptop --tail 3
 
 The cluster supports these pre-configured models (loaded only on workers):
 
-- **tiny-gpt2**: Small GPT-2 model for text generation (fastest, ~50MB) - **✅ Tested & Working**
+- **gpt2**: Standard GPT-2 model for text generation (good quality, ~500MB) - **✅ Tested & Working**
+- **gpt2-medium**: Medium GPT-2 model for better text generation (~1.5GB)
+- **distilgpt2**: Distilled GPT-2 for faster inference (~300MB)
+- **microsoft/DialoGPT-medium**: Conversational AI model (~500MB)
+- **google/flan-t5-small**: Text-to-text generation model (~300MB)
+- **google/flan-t5-base**: Better text-to-text generation model (~1GB)
 - **distilbert**: DistilBERT for masked language modeling (~260MB)
-- **flan-t5-small**: Small T5 model for text-to-text generation (~300MB)
+- **tiny-gpt2**: Small GPT-2 model for text generation (fastest, ~50MB) - **Legacy**
 
-**Note**: Laptop mode loads `tiny-gpt2` on workers to save memory and prevent OOM issues.
+**Note**: Laptop mode loads `gpt2` on workers for good balance of quality and performance.
 
 ## Monitoring and Debugging
 
@@ -605,64 +610,3 @@ You have full, clear, real-time visibility into every operation, prompt, and out
 5. **Health check failures**:
    - **Fixed**: New Ray API-based health checks are reliable
    - Test manually: `docker exec <container> /app/health_check.sh`
-   - Check if Ray is actually running: `docker logs <container-name>`
-
-6. **No actors available**:
-   - **New**: Check if workers have joined and registered actors
-   - Use `docker logs ray-cluster-worker-laptop` to see registration
-   - Wait for workers to load models and register with coordinator
-
-7. **Syntax errors or Unicode issues**:
-   - **Fixed**: All emoji characters replaced with ASCII equivalents
-   - Ensure you're using the latest `main.py` file
-   - Rebuild containers if needed: `docker-compose build --no-cache`
-
-## Production Deployment
-
-### Security Considerations
-
-- Use private Docker registries
-- Implement network segmentation
-- Add authentication for Ray dashboard
-- Use secrets management for sensitive data
-
-### Scaling Strategies
-
-- **Horizontal Scaling**: Add more worker nodes
-- **Vertical Scaling**: Increase CPU/memory per node
-- **Auto-scaling**: Use Kubernetes HPA or similar
-
-### High Availability
-
-- Deploy multiple head nodes with load balancing
-- Use persistent storage for model cache
-- Implement health checks and auto-restart
-- Monitor resource usage and performance
-
-## Development
-
-### Local Development
-
-```bash
-# Run without containers (laptop mode)
-python main.py --mode=head --config=config/laptop_config.yaml
-
-# In another terminal
-python main.py --mode=worker --config=config/laptop_config.yaml
-```
-
-### Adding New Models
-
-1. Add model configuration to `MODEL_CONFIGS` in `main.py`
-2. Update configuration files to include the new model
-3. Rebuild Docker images
-
-### Customizing the Application
-
-- Modify `main.py` for custom inference logic
-- Update configuration files for different settings
-- Add new scripts in the `scripts/` directory
-
-## License
-
-This project is open source. See LICENSE file for details. 
