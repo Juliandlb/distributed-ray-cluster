@@ -52,199 +52,191 @@ class InteractivePromptClient:
         except Exception as e:
             return f"❌ Error processing prompt: {e}"
 
+def display_cluster_status(coordinator):
+    """Display comprehensive cluster status"""
+    try:
+        cluster_status = ray.get(coordinator.get_cluster_status.remote())
+        
+        print("\n" + "="*60)
+        print("📊 [CLUSTER STATUS] Distributed Ray Cluster")
+        print("="*60)
+        
+        # Cluster resources
+        resources = cluster_status['cluster_resources']
+        print(f"🔧 [RESOURCES]")
+        print(f"   CPU: {resources.get('CPU', 0):.1f}")
+        print(f"   Memory: {resources.get('memory', 0) / 1024 / 1024 / 1024:.1f} GB")
+        
+        # Cluster nodes
+        nodes = cluster_status['cluster_nodes']
+        print(f"\n🖥️  [NODES] Total: {len(nodes)}")
+        for node_id, node_info in nodes.items():
+            status = "🟢" if node_info['alive'] else "🔴"
+            print(f"   {status} {node_info['hostname']} ({node_info['ip']})")
+            print(f"      Actors: {node_info['actor_count']}")
+            print(f"      Resources: CPU={node_info['resources'].get('CPU', 0):.1f}, Memory={node_info['resources'].get('memory', 0) / 1024 / 1024 / 1024:.1f}GB")
+        
+        # Actor details
+        actors = cluster_status['actor_details']
+        print(f"\n🤖 [ACTORS] Total: {len(actors)}")
+        for actor_id, actor_info in actors.items():
+            print(f"   Actor {actor_id}: {actor_info['model_name']} on {actor_info['node_hostname']}")
+        
+        print("="*60)
+        
+    except Exception as e:
+        print(f"❌ Error getting cluster status: {e}")
+
+def process_prompt_with_node_info(coordinator, prompt):
+    """Process a prompt and display detailed node information"""
+    try:
+        print(f"\n🤖 [PROMPT] '{prompt}'")
+        print(f"📤 [SENDING] Sending to coordinator...")
+        
+        start_time = time.time()
+        result = ray.get(coordinator.process_prompt.remote(prompt))
+        end_time = time.time()
+        
+        print(f"📥 [RESPONSE] Received in {end_time - start_time:.2f}s")
+        
+        # Display cluster information
+        cluster_status = result.get('cluster_status', {})
+        print(f"\n📊 [CLUSTER INFO]")
+        print(f"   Total nodes: {len(cluster_status.get('cluster_nodes', {}))}")
+        print(f"   Total actors: {result['total_actors']}")
+        print(f"   Successful responses: {result['successful_responses']}")
+        
+        # Display results with node information
+        print(f"\n💬 [RESPONSES]")
+        for i, response in enumerate(result['results']):
+            if response['status'] == 'success':
+                print(f"   ✅ Actor {response['actor_id']} ({response['model_name']})")
+                print(f"      Node: {response['node_hostname']} ({response['node_ip']})")
+                print(f"      Processing time: {response['processing_time']:.2f}s")
+                print(f"      Response: {response['response'][:200]}{'...' if len(response['response']) > 200 else ''}")
+            else:
+                print(f"   ❌ Actor {response['actor_id']} - Error: {response['response']}")
+        
+        # Show which node answered (for single response)
+        if result['successful_responses'] == 1:
+            for response in result['results']:
+                if response['status'] == 'success':
+                    print(f"\n🎯 [ANSWERED BY] Node: {response['node_hostname']} ({response['node_ip']})")
+                    print(f"   Model: {response['model_name']}")
+                    print(f"   Processing time: {response['processing_time']:.2f}s")
+                    break
+        
+        return result
+        
+    except Exception as e:
+        print(f"❌ Error processing prompt: {e}")
+        return None
+
 def real_interactive_prompts():
     """Real interactive prompt interface using actual Ray cluster."""
-    
+    print("\n" + "="*80)
+    print("🎮 [REAL INTERACTIVE PROMPTS] Distributed Ray Cluster Client")
     print("="*80)
-    print("🎮 [REAL INTERACTIVE PROMPTS] Actual Ray Cluster Interface")
-    print("="*80)
     
-    # Connect to the Ray cluster
+    # Connect to Ray cluster
     print("🔗 Connecting to Ray cluster...")
     try:
-        ray.init(address='172.18.0.2:6379', ignore_reinit_error=True)
+        ray.init(address="ray-cluster-head-laptop:6379", namespace="default")
         print("✅ Connected to Ray cluster")
     except Exception as e:
         print(f"❌ Failed to connect to Ray cluster: {e}")
-        print("💡 Make sure the cluster is running with: docker-compose -f docker-compose.laptop.yml up -d")
         return
     
-    # Check cluster resources
+    # Get the prompt coordinator
+    print("🎯 [COORDINATOR] Looking for prompt coordinator...")
     try:
-        resources = ray.cluster_resources()
-        nodes = [k for k in resources.keys() if k.startswith('node:')]
-        print(f"✅ Found {len(nodes)} nodes in cluster")
-        print(f"📊 CPU: {resources.get('CPU', 0)}")
-        print(f"📊 Memory: {resources.get('memory', 0) / (1024**3):.1f} GB")
+        coordinator = ray.get_actor("prompt_coordinator", namespace="default")
+        print("✅ Found prompt coordinator")
+        
+        # Get initial actor count
+        actor_count = ray.get(coordinator.get_actor_count.remote())
+        print(f"🤖 Available inference actors: {actor_count}")
+        
+        if actor_count == 0:
+            print("⚠️  No actors available. Please wait for worker nodes to join and register.")
+            print("   You can still use the interface, but responses will be simulated.")
+        
     except Exception as e:
-        print(f"❌ Failed to get cluster resources: {e}")
+        print(f"❌ Could not find prompt coordinator: {e}")
+        print("⚠️  Running in simulation mode")
+        coordinator = None
     
-    # Create interactive client
-    print("🔗 Connecting to prompt coordinator...")
-    client = InteractivePromptClient.remote()
-    
-    if not ray.get(client.connect_to_coordinator.remote()):
-        print("❌ Failed to connect to coordinator")
-        print("💡 The coordinator is running but not accessible by name")
-        print("🔧 This is a known issue with the current setup")
-        
-        # Provide alternative interactive interface
-        print("\n🎮 [ALTERNATIVE INTERFACE] Ready for prompts!")
-        print("Type your prompts and press Enter. Type 'quit' to exit.")
-        print("-" * 80)
-        
-        prompt_count = 0
-        
-        while True:
-            try:
-                user_input = input(f"\n🤖 [PROMPT {prompt_count + 1}] ").strip()
-                
-                if user_input.lower() in ['quit', 'exit', 'q']:
-                    break
-                    
-                if not user_input:
-                    continue
-                
-                if user_input.lower() == 'status':
-                    try:
-                        resources = ray.cluster_resources()
-                        print(f"📊 [CLUSTER STATUS] Resources: {resources}")
-                    except Exception as e:
-                        print(f"❌ Failed to get status: {e}")
-                    continue
-                
-                prompt_count += 1
-                start_time = time.time()
-                
-                print(f"📤 [SENDING] '{user_input}'")
-                print("📡 [PROCESSING] Sending to cluster...")
-                
-                # Simulate processing since coordinator not accessible
-                time.sleep(1.5)
-                
-                end_time = time.time()
-                processing_time = end_time - start_time
-                
-                print(f"📥 [RESPONSE] (took {processing_time:.2f}s)")
-                print("💬 [SIMULATED RESPONSE] This is a simulated response since the coordinator is not accessible by name.")
-                print("🔧 [NOTE] The coordinator is running but there's a namespace/registration issue.")
-                print("💡 [SUGGESTION] The cluster is working - the coordinator is processing prompts in the background.")
-                
-            except KeyboardInterrupt:
-                break
-            except Exception as e:
-                print(f"❌ Error: {e}")
-        
-        print("\n✅ [TEST COMPLETE]")
-        print("The distributed Ray cluster is working!")
-        print("The coordinator naming issue is a minor configuration problem.")
-        print("The core infrastructure (Ray, containers, networking) is functional.")
-        
-        # Cleanup
-        try:
-            ray.shutdown()
-            print("✅ Ray connection closed")
-        except:
-            pass
-        return
-    
-    print("✅ Connected to prompt coordinator")
-    
-    print(f"\n🎯 [READY] Real interactive prompt interface ready!")
+    print("\n" + "="*80)
+    print("🎮 [INTERACTIVE MODE] Type your prompts below")
     print("="*80)
-    print("💡 Type your prompts and press Enter to get REAL model responses")
-    print("💡 Type 'quit' or 'exit' to stop")
-    print("💡 Type 'status' to see cluster status")
-    print("💡 Type 'help' for commands")
-    print("💡 Type 'test' for a test prompt")
+    print("Commands:")
+    print("  - Type any prompt and press Enter")
+    print("  - 'status' - Show cluster status and node information")
+    print("  - 'actors' - Show available actors")
+    print("  - 'test' - Run a test prompt")
+    print("  - 'quit' or 'exit' - Exit the interface")
     print("="*80)
-    
-    prompt_count = 0
     
     while True:
         try:
             # Get user input
-            prompt = input(f"\n🤖 [PROMPT {prompt_count + 1}] ").strip()
+            user_input = input("\n🤖 [PROMPT] ").strip()
             
-            if not prompt:
+            if not user_input:
                 continue
-                
-            if prompt.lower() in ['quit', 'exit', 'q']:
-                print("\n👋 [GOODBYE] Shutting down interactive interface...")
+            
+            # Handle commands
+            if user_input.lower() in ['quit', 'exit']:
+                print("👋 Goodbye!")
                 break
-                
-            if prompt.lower() == 'status':
-                print(f"\n📊 [CLUSTER STATUS]")
-                try:
-                    resources = ray.cluster_resources()
-                    nodes = [k for k in resources.keys() if k.startswith('node:')]
-                    print(f"   Nodes: {len(nodes)}")
-                    print(f"   CPU: {resources.get('CPU', 0)}")
-                    print(f"   Memory: {resources.get('memory', 0) / (1024**3):.1f} GB")
-                    print(f"   GPU: {resources.get('GPU', 0)}")
-                    
-                    # Get coordinator status
-                    coordinator_status = ray.get(client.get_cluster_status.remote())
-                    print(f"   Coordinator: {coordinator_status}")
-                except Exception as e:
-                    print(f"   Error getting status: {e}")
+            elif user_input.lower() == 'status':
+                if coordinator:
+                    display_cluster_status(coordinator)
+                else:
+                    print("❌ Coordinator not available")
                 continue
-            
-            if prompt.lower() == 'help':
-                print(f"\n📋 [HELP] Available commands:")
-                print(f"   Type any prompt to get REAL model inference response")
-                print(f"   'status' - Show cluster and coordinator status")
-                print(f"   'test' - Send a test prompt")
-                print(f"   'quit' or 'exit' - Stop the interface")
-                print(f"   'help' - Show this help message")
+            elif user_input.lower() == 'actors':
+                if coordinator:
+                    try:
+                        actor_info = ray.get(coordinator.get_actor_info.remote())
+                        print(f"\n🤖 [ACTORS] Total: {actor_info['total_actors']}")
+                        for actor_id, info in actor_info['actors'].items():
+                            print(f"   Actor {actor_id}: {info['model_name']} on {info['node_hostname']}")
+                    except Exception as e:
+                        print(f"❌ Error getting actor info: {e}")
+                else:
+                    print("❌ Coordinator not available")
                 continue
-            
-            if prompt.lower() == 'test':
-                prompt = "What is machine learning?"
-                print(f"🧪 [TEST] Using test prompt: '{prompt}'")
+            elif user_input.lower() == 'test':
+                user_input = "What is artificial intelligence?"
+                print(f"🧪 [TEST] Using prompt: '{user_input}'")
             
             # Process the prompt
-            print(f"📤 [SENDING] '{prompt}'")
-            start_time = time.time()
-            
-            print(f"📡 [PROCESSING] Sending to coordinator...")
-            print(f"🌐 [COORDINATOR] Routing to available worker...")
-            print(f"🤖 [WORKER NODE] Processing with actual model...")
-            
-            # Send to coordinator for real processing
-            result = ray.get(client.process_prompt.remote(prompt))
-            
-            end_time = time.time()
-            processing_time = end_time - start_time
-            
-            print(f"📥 [WORKER NODE] Model inference complete")
-            print(f"📤 [WORKER NODE] Sending response back to coordinator")
-            print(f"📥 [COORDINATOR] Receiving response from worker")
-            print(f"📤 [COORDINATOR] Sending response to user")
-            
-            print(f"📥 [RESPONSE] (took {processing_time:.2f}s)")
-            print(f"💬 [RESPONSE] '{result}'")
-            print(f"🌐 [NODE INFO] Response processed by real distributed worker node")
-            print(f"✅ [SUCCESS] Real prompt processed successfully!")
-            
-            prompt_count += 1
-            
+            if coordinator:
+                result = process_prompt_with_node_info(coordinator, user_input)
+                if result and result['successful_responses'] > 0:
+                    print(f"\n💬 [FINAL RESPONSE] {result['consolidated_response']}")
+                else:
+                    print("❌ No successful responses received")
+            else:
+                # Fallback to simulation
+                print("📤 [SENDING] (simulation mode)")
+                time.sleep(1)
+                print("📥 [RESPONSE] (simulation mode)")
+                print("💬 [RESPONSE] This is a simulated response since no coordinator is available.")
+                print("   Please ensure the cluster is running and workers have registered.")
+        
         except KeyboardInterrupt:
-            print("\n\n👋 [GOODBYE] Shutting down interactive interface...")
+            print("\n👋 Goodbye!")
             break
-        except EOFError:
-            print("\n\n👋 [GOODBYE] Shutting down interactive interface...")
-            break
-    
-    # Summary
-    print(f"\n📊 [SESSION SUMMARY]")
-    print(f"   Total prompts processed: {prompt_count}")
-    print(f"   Real model inference: ✅ Working")
-    print(f"   Distributed processing: ✅ Working")
+        except Exception as e:
+            print(f"❌ Error: {e}")
     
     # Cleanup
-    ray.shutdown()
-    print("✅ Interactive interface stopped")
+    try:
+        ray.shutdown()
+    except:
+        pass
 
 if __name__ == "__main__":
     real_interactive_prompts() 

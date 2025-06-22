@@ -197,140 +197,211 @@ def log_memory_usage(node_id, model_name, pid, stage, initial_memory=None, final
 @ray.remote
 class LLMInferenceActor:
     def __init__(self, model_name: str, model_path: str = None):
+        self.model_name = model_name
+        self.model_config = MODEL_CONFIGS.get(model_name, {})
+        
+        # Get node information for this actor
         self.node_info = get_node_info()
+        
         print(f"[ACTOR CREATION] {model_name} Model Instance")
         print(f"[NODE] Node: {self.node_info['hostname']} ({self.node_info['ip_address']})")
-        self.model_name = model_name
-        self.model_config = MODEL_CONFIGS[model_name]
-        self.model_path = model_path or self.model_config['model_id']
-        
-        print(f"[MODEL] Model: {self.model_name}")
+        print(f"[MODEL] Model: {model_name}")
         print(f"[MODEL_ID] Model ID: {self.model_config['model_id']}")
         
         # Track memory before model loading
         initial_memory = self._get_memory_usage()
-        print(f"[MEMORY] Initial memory usage:")
-        print(f"  RSS: {initial_memory['rss']:.2f}MB")
-        print(f"  VMS: {initial_memory['vms']:.2f}MB")
-        print(f"  Shared: {initial_memory['shared']:.2f}MB")
-        print(f"  Private: {initial_memory['private']:.2f}MB")
         
         # Load the model
         print(f"[LOADING] Loading model: {self.model_config['model_id']}")
         self.tokenizer = AutoTokenizer.from_pretrained(self.model_config['model_id'])
-        self.model = AutoModelForCausalLM.from_pretrained(
-            self.model_config['model_id'],
-            torch_dtype=torch.float16 if self.model_config.get('use_fp16', False) else torch.float32,
-            device_map='auto' if self.model_config.get('use_device_map', False) else None
-        )
+        self.model = AutoModelForCausalLM.from_pretrained(self.model_config['model_id'])
         
         # Track memory after model loading
         final_memory = self._get_memory_usage()
         self._log_memory_change(initial_memory, final_memory, self.model_name, "MODEL_LOADED")
         
         print(f"\n[OK] [MODEL LOADED] {self.model_name} Ready for Inference")
-    
+        print(f"[NODE] Running on: {self.node_info['hostname']} ({self.node_info['ip_address']})")
+
     def _get_memory_usage(self):
-        """Get current memory usage for this process"""
-        process = psutil.Process()
-        memory_info = process.memory_info()
-        return {
-            'rss': memory_info.rss / 1024 / 1024,  # MB
-            'vms': memory_info.vms / 1024 / 1024,  # MB
-            'shared': memory_info.shared / 1024 / 1024 if hasattr(memory_info, 'shared') else 0,  # MB
-            'private': memory_info.private / 1024 / 1024 if hasattr(memory_info, 'private') else 0  # MB
-        }
-    
-    def _log_memory_change(self, initial_memory, final_memory, model_name, stage):
-        """Log memory usage changes"""
-        timestamp = datetime.now().strftime('%H:%M:%S.%f')[:-3]
-        if initial_memory:
-            print(f"\n[{timestamp}] {model_name} (PID:{os.getpid()}) - {stage}")
-            print(f"  RSS: {final_memory['rss']:.2f}MB (delta: {final_memory['rss'] - initial_memory['rss']:+.2f}MB)")
-            print(f"  VMS: {final_memory['vms']:.2f}MB (delta: {final_memory['vms'] - initial_memory['vms']:+.2f}MB)")
-            print(f"  Shared: {final_memory['shared']:.2f}MB (delta: {final_memory['shared'] - initial_memory['shared']:+.2f}MB)")
-            print(f"  Private: {final_memory['private']:.2f}MB (delta: {final_memory['private'] - initial_memory['private']:+.2f}MB)")
-        sys.stdout.flush()
-    
-    def generate(self, prompt: str) -> str:
-        """Generate text based on the prompt"""
-        timestamp = datetime.now().strftime('%H:%M:%S.%f')[:-3]
-        node_info = get_node_info()
-        print(f"[PROMPT RECEIVED] {timestamp}")
-        print(f"[NODE INFO] Hostname: {node_info['hostname']}, IP: {node_info['ip_address']}, Ray Node ID: {node_info['ray_node_id']}")
-        print(f"[MODEL] {self.model_name}")
-        print(f"[PROMPT] {prompt}")
-        # Get memory usage before inference
-        pre_inference_memory = self._get_memory_usage()
-        # Generate response based on model type
+        """Get current memory usage"""
         try:
-            inputs = self.tokenizer(prompt, return_tensors="pt")
+            import psutil
+            process = psutil.Process()
+            return process.memory_info().rss
+        except:
+            return 0
+
+    def _log_memory_change(self, initial_memory, final_memory, model_name, stage):
+        """Log memory usage change"""
+        if initial_memory and final_memory:
+            change_mb = (final_memory - initial_memory) / 1024 / 1024
+            print(f"[MEMORY] {stage}: {change_mb:.1f}MB change for {model_name}")
+
+    def get_node_info(self) -> Dict[str, Any]:
+        """Get current node information for this actor"""
+        return get_node_info()
+
+    def generate(self, prompt: str) -> str:
+        """Generate response for the given prompt"""
+        start_time = time.time()
+        
+        # Get current node info for this request
+        current_node_info = get_node_info()
+        
+        print(f"\n[INFERENCE] Processing prompt on {current_node_info['hostname']}")
+        print(f"[NODE] Node: {current_node_info['hostname']} ({current_node_info['ip_address']})")
+        print(f"[MODEL] Model: {self.model_name}")
+        print(f"[PROMPT] '{prompt[:50]}{'...' if len(prompt) > 50 else ''}'")
+        
+        try:
+            # Tokenize input
+            inputs = self.tokenizer.encode(prompt, return_tensors="pt")
+            
+            # Generate response
             with torch.no_grad():
                 outputs = self.model.generate(
-                    inputs.input_ids,
-                    max_length=inputs.input_ids.shape[1] + 50,
+                    inputs,
+                    max_length=inputs.shape[1] + 50,
                     num_return_sequences=1,
                     temperature=0.7,
                     do_sample=True,
                     pad_token_id=self.tokenizer.eos_token_id
                 )
-            generated_text = self.tokenizer.decode(outputs[0], skip_special_tokens=True)
-            response = generated_text[len(prompt):].strip()
+            
+            # Decode response
+            response = self.tokenizer.decode(outputs[0], skip_special_tokens=True)
+            
+            # Remove the original prompt from response
+            if response.startswith(prompt):
+                response = response[len(prompt):].strip()
+            
+            end_time = time.time()
+            processing_time = end_time - start_time
+            
+            print(f"[RESPONSE] Generated in {processing_time:.2f}s")
+            print(f"[NODE] Response from: {current_node_info['hostname']} ({current_node_info['ip_address']})")
+            
+            # Return response with node information
+            return {
+                'response': response,
+                'node_hostname': current_node_info['hostname'],
+                'node_ip': current_node_info['ip_address'],
+                'node_id': current_node_info['ray_node_id'],
+                'model_name': self.model_name,
+                'processing_time': processing_time
+            }
+            
         except Exception as e:
             print(f"[ERROR] Generation failed: {e}")
-            response = f"Error generating response: {str(e)}"
-        # Get memory usage after inference
-        post_inference_memory = self._get_memory_usage()
-        # Enhanced output logging
-        print(f"[OK] [OPERATION COMPLETED] {datetime.now().strftime('%H:%M:%S.%f')[:-3]}")
-        print(f"[NODE INFO] Hostname: {node_info['hostname']}, IP: {node_info['ip_address']}, Ray Node ID: {node_info['ray_node_id']}")
-        print(f"[MODEL] {self.model_name}")
-        print(f"[RESPONSE] Generated {len(response)} characters")
-        print(f"[RESPONSE TEXT] {response[:100]}{'...' if len(response) > 100 else ''}")
-        sys.stdout.flush()
-        return response
+            return {
+                'response': f"Error generating response: {str(e)}",
+                'node_hostname': current_node_info['hostname'],
+                'node_ip': current_node_info['ip_address'],
+                'node_id': current_node_info['ray_node_id'],
+                'model_name': self.model_name,
+                'processing_time': time.time() - start_time,
+                'error': str(e)
+            }
 
 @ray.remote
 class PromptCoordinator:
     def __init__(self, actors: List[ray.actor.ActorHandle]):
         self.actors = actors
-        self.actors_dict = {f"actor_{i}": actor for i, actor in enumerate(actors)}
-        
+        self.actor_info = {}  # Track actor details including node info
         print(f"[COORDINATOR] Prompt Coordinator initialized")
-        print(f"[NODE] Node: {get_node_info()['hostname']} ({get_node_info()['ip_address']})")
-        print(f"[MODELS] Available Models: {list(self.actors_dict.keys())}")
-    
+        print(f"[COORDINATOR] Available models: {[f'actor_{i}' for i in range(len(actors))]}")
+
     def register_actor(self, actor: ray.actor.ActorHandle, model_name: str = None):
-        """Register a new actor from a worker node"""
+        """Register a new actor with the coordinator"""
         actor_id = len(self.actors)
         self.actors.append(actor)
-        actor_key = f"actor_{actor_id}"
-        self.actors_dict[actor_key] = actor
         
-        print(f"[COORDINATOR] Registered new actor: {actor_key}")
-        print(f"[COORDINATOR] Total actors: {len(self.actors)}")
-        print(f"[COORDINATOR] Available models: {list(self.actors_dict.keys())}")
+        # Get node info for this actor
+        try:
+            node_info = ray.get(actor.get_node_info.remote())
+            self.actor_info[actor_id] = {
+                'model_name': model_name,
+                'node_hostname': node_info['hostname'],
+                'node_ip': node_info['ip_address'],
+                'node_id': node_info['ray_node_id']
+            }
+        except:
+            # Fallback if node info not available
+            self.actor_info[actor_id] = {
+                'model_name': model_name,
+                'node_hostname': 'unknown',
+                'node_ip': 'unknown',
+                'node_id': 'unknown'
+            }
         
+        print(f"[COORDINATOR] Registered actor {actor_id} ({model_name}) on {self.actor_info[actor_id]['node_hostname']}")
         return actor_id
-    
+
     def get_actor_count(self) -> int:
         """Get the number of available actors"""
         return len(self.actors)
-    
+
     def get_actor_info(self) -> Dict[str, Any]:
-        """Get information about available actors"""
+        """Get detailed information about all actors"""
         return {
             'total_actors': len(self.actors),
-            'actor_keys': list(self.actors_dict.keys()),
-            'node_info': get_node_info()
+            'actors': self.actor_info,
+            'cluster_nodes': self._get_cluster_nodes()
         }
     
+    def get_cluster_status(self) -> Dict[str, Any]:
+        """Get comprehensive cluster status including node information"""
+        cluster_resources = ray.cluster_resources()
+        cluster_nodes = self._get_cluster_nodes()
+        
+        return {
+            'total_actors': len(self.actors),
+            'cluster_resources': cluster_resources,
+            'cluster_nodes': cluster_nodes,
+            'actor_details': self.actor_info
+        }
+    
+    def _get_cluster_nodes(self) -> Dict[str, Any]:
+        """Get information about all nodes in the cluster"""
+        try:
+            # Get all nodes in the cluster
+            nodes = ray.nodes()
+            node_info = {}
+            
+            for node in nodes:
+                node_id = node['NodeID']
+                node_info[node_id] = {
+                    'hostname': node.get('Hostname', 'unknown'),
+                    'ip': node.get('NodeIP', 'unknown'),
+                    'alive': node.get('Alive', False),
+                    'resources': node.get('Resources', {}),
+                    'actor_count': 0  # Will be updated below
+                }
+            
+            # Count actors per node
+            for actor_id, info in self.actor_info.items():
+                node_id = info['node_id']
+                if node_id in node_info:
+                    node_info[node_id]['actor_count'] = node_info[node_id].get('actor_count', 0) + 1
+            
+            return node_info
+        except Exception as e:
+            print(f"[WARNING] Could not get cluster nodes: {e}")
+            return {}
+
     def process_prompt(self, prompt: str) -> Dict[str, Any]:
         """Process a prompt using all available actors"""
         request_timestamp = datetime.now().strftime('%H:%M:%S.%f')[:-3]
+        
+        # Get cluster status
+        cluster_status = self.get_cluster_status()
+        
         print(f"[COORDINATOR] Processing prompt: '{prompt[:50]}...'")
         print(f"[TIME] Timestamp: {request_timestamp}")
-        print(f"[DISTRIBUTION] Distributing to {len(self.actors)} nodes...")
+        print(f"[CLUSTER] Total nodes: {len(cluster_status['cluster_nodes'])}")
+        print(f"[CLUSTER] Total actors: {len(self.actors)}")
+        print(f"[DISTRIBUTION] Distributing to {len(self.actors)} actors...")
         
         if not self.actors:
             return {
@@ -340,7 +411,8 @@ class PromptCoordinator:
                 'successful_responses': 0,
                 'results': [],
                 'consolidated_response': "No inference actors available. Please wait for worker nodes to join.",
-                'error': 'NO_ACTORS_AVAILABLE'
+                'error': 'NO_ACTORS_AVAILABLE',
+                'cluster_status': cluster_status
             }
         
         # Submit tasks to all actors
@@ -355,24 +427,37 @@ class PromptCoordinator:
         for i, future in enumerate(futures):
             try:
                 result = ray.get(future)
-                # Enhanced: get node info from actor (if possible)
+                # Enhanced: get node info from actor response
                 print(f"[OK] [NODE - {i}] Response received from actor {i}")
-                print(f"[OK] [NODE - {i}] Response: {result[:100]}{'...' if len(result) > 100 else ''}")
+                print(f"[OK] [NODE - {i}] Node: {result['node_hostname']} ({result['node_ip']})")
+                print(f"[OK] [NODE - {i}] Model: {result['model_name']}")
+                print(f"[OK] [NODE - {i}] Response: {result['response'][:100]}{'...' if len(result['response']) > 100 else ''}")
+                
                 results.append({
                     'actor_id': i,
-                    'response': result,
+                    'response': result['response'],
                     'timestamp': datetime.now().strftime('%H:%M:%S.%f')[:-3],
-                    'status': 'success'
+                    'status': 'success',
+                    'node_hostname': result['node_hostname'],
+                    'node_ip': result['node_ip'],
+                    'node_id': result['node_id'],
+                    'model_name': result['model_name'],
+                    'processing_time': result['processing_time']
                 })
                 successful_responses += 1
             except Exception as e:
+                print(f"[ERROR] [NODE - {i}] Failed: {e}")
                 results.append({
                     'actor_id': i,
                     'response': f"Error: {str(e)}",
                     'timestamp': datetime.now().strftime('%H:%M:%S.%f')[:-3],
-                    'status': 'error'
+                    'status': 'error',
+                    'node_hostname': 'unknown',
+                    'node_ip': 'unknown',
+                    'node_id': 'unknown',
+                    'model_name': 'unknown',
+                    'error': str(e)
                 })
-                print(f"[ERROR] [NODE - {i}] Failed: {e}")
         
         # Consolidate results
         consolidated_result = {
@@ -381,21 +466,22 @@ class PromptCoordinator:
             'total_actors': len(self.actors),
             'successful_responses': successful_responses,
             'results': results,
-            'consolidated_response': results[0]['response'] if results else "No responses received"
+            'consolidated_response': results[0]['response'] if results else "No responses received",
+            'cluster_status': cluster_status
         }
         
         print(f"[OK] Successful Responses: {successful_responses}/{len(self.actors)}")
         
-        # Log detailed results
+        # Log detailed results with node information
         for result in results:
             if result['status'] == 'success':
-                model_name = f"actor_{result['actor_id']}"
-                print(f"\n[MODEL: {model_name.upper()}]")
-                print(f"   [TIME] Time: {result['timestamp']}")
+                print(f"\n[MODEL: {result['model_name'].upper()}]")
+                print(f"   [NODE] Node: {result['node_hostname']} ({result['node_ip']})")
+                print(f"   [TIME] Processing: {result['processing_time']:.2f}s")
                 print(f"   [RESPONSE] {result['response'][:100]}...")
             else:
-                print(f"\n[ERROR] [MODEL: actor_{result['actor_id']}]")
-                print(f"   [TIME] Time: {result['timestamp']}")
+                print(f"\n[ERROR] [MODEL: {result['model_name']}]")
+                print(f"   [NODE] Node: {result['node_hostname']} ({result['node_ip']})")
                 print(f"   [ERROR] {result['response']}")
         
         print(f"\n[OK] [HEAD NODE - REQUEST COMPLETED] All responses logged and consolidated")

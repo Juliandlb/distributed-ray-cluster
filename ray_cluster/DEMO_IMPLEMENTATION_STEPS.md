@@ -246,24 +246,71 @@ docker-compose exec ray-head python test_new_architecture.py
 
 ```bash
 # Start interactive client
-docker-compose exec ray-head python working_realtime_client.py
+docker-compose exec ray-head python real_interactive_prompts.py
 ```
 
 **Example Session**:
 ```
-🎮 [WORKING REALTIME CLIENT] Interactive Distributed Inference
+🎮 [REAL INTERACTIVE PROMPTS] Distributed Ray Cluster Client
 🔗 Connecting to Ray cluster...
 ✅ Connected to Ray cluster
 🎯 [COORDINATOR] Looking for prompt coordinator...
 ✅ Found prompt coordinator
 🤖 Available inference actors: 1
 
-🤖 [PROMPT 1] What is machine learning?
-📤 [SENDING] 'What is machine learning?'
-📡 [PROCESSING] Sending to coordinator...
-📥 [RESPONSE] (took 1.23s)
-🤖 [ACTORS] Used 1/1 actors
-💬 [RESPONSE] Machine learning is a subset of artificial intelligence...
+🎮 [INTERACTIVE MODE] Type your prompts below
+============================================================
+Commands:
+  - Type any prompt and press Enter
+  - 'status' - Show cluster status and node information
+  - 'actors' - Show available actors
+  - 'test' - Run a test prompt
+  - 'quit' or 'exit' - Exit the interface
+============================================================
+
+🤖 [PROMPT] What is machine learning?
+📤 [SENDING] Sending to coordinator...
+📥 [RESPONSE] Received in 1.23s
+
+📊 [CLUSTER INFO]
+   Total nodes: 2
+   Total actors: 1
+   Successful responses: 1
+
+💬 [RESPONSES]
+   ✅ Actor 0 (gpt2)
+      Node: ray-cluster-worker-laptop (172.18.0.2)
+      Processing time: 1.23s
+      Response: Machine learning is a subset of artificial intelligence...
+
+🎯 [ANSWERED BY] Node: ray-cluster-worker-laptop (172.18.0.2)
+   Model: gpt2
+   Processing time: 1.23s
+
+💬 [FINAL RESPONSE] Machine learning is a subset of artificial intelligence...
+```
+
+**Cluster Status Command**:
+```
+🤖 [PROMPT] status
+
+📊 [CLUSTER STATUS] Distributed Ray Cluster
+============================================================
+🔧 [RESOURCES]
+   CPU: 3.0
+   Memory: 3.0 GB
+
+🖥️  [NODES] Total: 2
+   🟢 ray-cluster-head-laptop (172.18.0.3)
+      Actors: 0
+      Resources: CPU=1.0, Memory=1.0GB
+   🟢 ray-cluster-worker-laptop (172.18.0.2)
+      Actors: 1
+      Resources: CPU=2.0, Memory=2.0GB
+
+🤖 [ACTORS] Total: 1
+   Actor 0: gpt2 on ray-cluster-worker-laptop
+============================================================
 ```
 
 ### **Step 5: Scale with More Workers**

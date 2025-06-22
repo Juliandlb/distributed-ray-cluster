@@ -150,8 +150,9 @@ docker exec -it ray-cluster-head-laptop python working_realtime_prompts.py
 - **Interactive Prompts**: Type any prompt and press Enter
 - **Real Model Responses**: Get actual inference results from workers
 - **Actor Discovery**: See how many inference actors are available
-- **Cluster Status**: Type `status` to see cluster resources
-- **Actor Info**: Type `actors` to see registered actors
+- **Cluster Status**: Type `status` to see cluster resources and node information
+- **Actor Info**: Type `actors` to see registered actors and their nodes
+- **Node Information**: See which node answered each prompt
 - **Test Mode**: Type `test` for a predefined test prompt
 - **Enhanced Logging**: Type `logs` to see recent cluster logs
 - **Graceful Exit**: Type `quit` or `exit` to stop
@@ -163,10 +164,47 @@ docker exec -it ray-cluster-head-laptop python working_realtime_prompts.py
 📤 [SENDING] 'What is artificial intelligence?'
 📡 [PROCESSING] Sending to coordinator...
 📥 [RESPONSE] (took 1.23s)
-🤖 [ACTORS] Used 1/1 actors
-💬 [RESPONSE] Artificial intelligence (AI) is a branch of computer science...
-📊 [DETAILED RESULTS]
-   ✅ Actor 0: Artificial intelligence (AI) is a branch of computer science...
+
+📊 [CLUSTER INFO]
+   Total nodes: 2
+   Total actors: 1
+   Successful responses: 1
+
+💬 [RESPONSES]
+   ✅ Actor 0 (gpt2)
+      Node: ray-cluster-worker-laptop (172.18.0.2)
+      Processing time: 1.23s
+      Response: Artificial intelligence (AI) is a branch of computer science...
+
+🎯 [ANSWERED BY] Node: ray-cluster-worker-laptop (172.18.0.2)
+   Model: gpt2
+   Processing time: 1.23s
+
+💬 [FINAL RESPONSE] Artificial intelligence (AI) is a branch of computer science...
+```
+
+### **Cluster Status Command**
+
+Type `status` to see comprehensive cluster information:
+
+```
+📊 [CLUSTER STATUS] Distributed Ray Cluster
+============================================================
+🔧 [RESOURCES]
+   CPU: 3.0
+   Memory: 3.0 GB
+
+🖥️  [NODES] Total: 2
+   🟢 ray-cluster-head-laptop (172.18.0.3)
+      Actors: 0
+      Resources: CPU=1.0, Memory=1.0GB
+   🟢 ray-cluster-worker-laptop (172.18.0.2)
+      Actors: 1
+      Resources: CPU=2.0, Memory=2.0GB
+
+🤖 [ACTORS] Total: 1
+   Actor 0: gpt2 on ray-cluster-worker-laptop
+============================================================
 ```
 
 ### **Current Capabilities**
