@@ -140,33 +140,86 @@ def real_interactive_prompts():
     print("🎮 [REAL INTERACTIVE PROMPTS] Distributed Ray Cluster Client")
     print("="*80)
     
-    # Connect to Ray cluster
+    # Connect to Ray cluster with improved error handling
     print("🔗 Connecting to Ray cluster...")
-    try:
-        ray.init(address="ray-cluster-head-laptop:6379", namespace="default")
-        print("✅ Connected to Ray cluster")
-    except Exception as e:
-        print(f"❌ Failed to connect to Ray cluster: {e}")
-        return
+    max_connection_attempts = 5
+    connection_attempt = 0
     
-    # Get the prompt coordinator
+    while connection_attempt < max_connection_attempts:
+        try:
+            print(f"   [ATTEMPT {connection_attempt + 1}/{max_connection_attempts}] Connecting to ray-head:6379...")
+            
+            # Initialize Ray connection with better configuration
+            ray.init(
+                address="ray-head:6379", 
+                namespace="default",
+                log_to_driver=False,  # Reduce log noise
+                ignore_reinit_error=True
+            )
+            print("✅ Connected to Ray cluster")
+            break
+            
+        except Exception as e:
+            connection_attempt += 1
+            print(f"❌ Connection attempt {connection_attempt} failed: {e}")
+            
+            if connection_attempt < max_connection_attempts:
+                wait_time = connection_attempt * 10  # Progressive backoff
+                print(f"   [WAIT] Waiting {wait_time}s before retry...")
+                time.sleep(wait_time)
+            else:
+                print(f"❌ Failed to connect to Ray cluster after {max_connection_attempts} attempts")
+                print("   Please ensure the cluster is running and accessible")
+                return
+    
+    # Get the prompt coordinator with retry logic
     print("🎯 [COORDINATOR] Looking for prompt coordinator...")
-    try:
-        coordinator = ray.get_actor("prompt_coordinator", namespace="default")
-        print("✅ Found prompt coordinator")
-        
+    max_coordinator_attempts = 10
+    coordinator_attempt = 0
+    coordinator = None
+    
+    while coordinator_attempt < max_coordinator_attempts:
+        try:
+            print(f"   [ATTEMPT {coordinator_attempt + 1}/{max_coordinator_attempts}] Looking for coordinator...")
+            coordinator = ray.get_actor("prompt_coordinator", namespace="default")
+            print("✅ Found prompt coordinator")
+            break
+            
+        except Exception as e:
+            coordinator_attempt += 1
+            print(f"❌ Coordinator attempt {coordinator_attempt} failed: {e}")
+            
+            if coordinator_attempt < max_coordinator_attempts:
+                wait_time = coordinator_attempt * 5  # Shorter waits for coordinator
+                print(f"   [WAIT] Waiting {wait_time}s before retry...")
+                time.sleep(wait_time)
+            else:
+                print(f"❌ Could not find prompt coordinator after {max_coordinator_attempts} attempts")
+                print("⚠️  Running in simulation mode")
+                coordinator = None
+                break
+    
+    if coordinator:
         # Get initial actor count
-        actor_count = ray.get(coordinator.get_actor_count.remote())
-        print(f"🤖 Available inference actors: {actor_count}")
-        
-        if actor_count == 0:
-            print("⚠️  No actors available. Please wait for worker nodes to join and register.")
-            print("   You can still use the interface, but responses will be simulated.")
-        
-    except Exception as e:
-        print(f"❌ Could not find prompt coordinator: {e}")
-        print("⚠️  Running in simulation mode")
-        coordinator = None
+        try:
+            actor_count = ray.get(coordinator.get_actor_count.remote())
+            print(f"🤖 Available inference actors: {actor_count}")
+            
+            if actor_count == 0:
+                print("⚠️  No actors available. Please wait for worker nodes to join and register.")
+                print("   You can still use the interface, but responses will be simulated.")
+            else:
+                # Get detailed actor information
+                try:
+                    actor_info = ray.get(coordinator.get_actor_info.remote())
+                    print(f"📊 Cluster has {actor_info['total_actors']} actors from {len(actor_info['cluster_nodes'])} nodes")
+                except Exception as e:
+                    print(f"⚠️  Could not get detailed actor info: {e}")
+                    
+        except Exception as e:
+            print(f"❌ Error getting actor count: {e}")
+            print("⚠️  Running in simulation mode")
+            coordinator = None
     
     print("\n" + "="*80)
     print("🎮 [INTERACTIVE MODE] Type your prompts below")

@@ -1,0 +1,149 @@
+version: '3.8'
+
+services:
+  # Ray Head Node (coordinator only - lightweight)
+  ray-head:
+    image: ray-cluster-head:latest
+    ports:
+      - "6379:6379"      # Ray port
+      - "8265:8265"      # Ray dashboard
+      - "12345:12345"    # Object manager port
+      - "12346:12346"    # Node manager port
+      - "10001:10001"    # Ray client port
+      - "10003:10003"    # Object manager communication port
+    environment:
+      - RAY_DISABLE_DEDUP=1
+      - RAY_DISABLE_CUSTOM_LOGGER=1
+      - PYTHONUNBUFFERED=1
+      - RAY_memory_usage_threshold=0.9
+      - RAY_memory_monitor_refresh_ms=2000
+      - RAY_object_spilling_config={"type":"filesystem","params":{"directory_path":"/tmp/ray/spill"}}
+      - RAY_raylet_start_wait_time_s=60
+      - RAY_gcs_server_port=6379
+      - RAY_redis_port=6379
+      - RAY_object_manager_port=12345
+      - RAY_node_manager_port=12346
+      - RAY_redis_password=
+      - RAY_redis_db=0
+      - RAY_redis_max_memory=2000000000
+      - RAY_redis_max_memory_policy=allkeys-lru
+    volumes:
+      - ray-models:/app/models
+      - ray-head-data:/tmp/ray
+    networks:
+      - ray-cluster
+    deploy:
+      mode: replicated
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager  # Ensure head node runs on manager
+        preferences:
+          - spread: node.labels.zone
+      resources:
+        limits:
+          memory: 2048M
+          cpus: '1.0'
+        reservations:
+          memory: 500M
+          cpus: '0.5'
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+        window: 120s
+      update_config:
+        parallelism: 1
+        delay: 10s
+        order: start-first
+      rollback_config:
+        parallelism: 1
+        delay: 5s
+        order: stop-first
+    healthcheck:
+      test: ["CMD", "/app/health_check.sh"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  # Ray Worker Nodes (inference - more resources)
+  ray-worker:
+    image: ray-cluster-worker:latest
+    environment:
+      - RAY_HEAD_ADDRESS=ray-head:6379
+      - CUDA_VISIBLE_DEVICES=  # No GPU by default
+      - RAY_DISABLE_DEDUP=1
+      - RAY_DISABLE_CUSTOM_LOGGER=1
+      - PYTHONUNBUFFERED=1
+      - RAY_memory_usage_threshold=0.9
+      - RAY_memory_monitor_refresh_ms=2000
+      - RAY_object_spilling_config={"type":"filesystem","params":{"directory_path":"/tmp/ray/spill"}}
+      - RAY_raylet_start_wait_time_s=60
+      - RAY_gcs_server_port=6379
+      - RAY_redis_port=6379
+      - RAY_object_manager_port=12345
+      - RAY_node_manager_port=12346
+      - RAY_redis_password=
+      - RAY_redis_db=0
+      - RAY_redis_max_memory=2000000000
+      - RAY_redis_max_memory_policy=allkeys-lru
+    volumes:
+      - ray-models:/app/models
+      - ray-worker-data:/tmp/ray
+    networks:
+      - ray-cluster
+    deploy:
+      mode: replicated
+      replicas: 2  # Start with 2 workers, can be scaled
+      placement:
+        # Allow workers on any node (manager or worker)
+        # When more nodes are added, you can add constraints back
+        preferences:
+          - spread: node.labels.zone
+      resources:
+        limits:
+          memory: 3G
+          cpus: '2.0'
+        reservations:
+          memory: 2G
+          cpus: '1.0'
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+        window: 120s
+      update_config:
+        parallelism: 1
+        delay: 10s
+        order: start-first
+      rollback_config:
+        parallelism: 1
+        delay: 5s
+        order: stop-first
+    healthcheck:
+      test: ["CMD", "/app/health_check.sh"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+volumes:
+  ray-head-data:
+    driver: local
+  ray-worker-data:
+    driver: local
+  ray-models:
+    driver: local
+
+networks:
+  ray-cluster:
+    driver: overlay
+    attachable: true
+    ipam:
+      config:
+        - subnet: 10.0.9.0/24
+    driver_opts:
+      com.docker.network.driver.mtu: 1400
+      com.docker.network.bridge.enable_icc: "true"
+      com.docker.network.bridge.enable_ip_masquerade: "true" 

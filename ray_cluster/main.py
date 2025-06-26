@@ -410,12 +410,21 @@ class PromptCoordinator:
 
     def register_actor(self, actor: ray.actor.ActorHandle, model_name: str = None):
         """Register a new actor with the coordinator"""
+        print(f"[COORDINATOR DEBUG] register_actor called with model_name: {model_name}")
+        print(f"[COORDINATOR DEBUG] Actor handle type: {type(actor)}")
+        print(f"[COORDINATOR DEBUG] Current actors count: {len(self.actors)}")
+        
         actor_id = len(self.actors)
         self.actors.append(actor)
         
+        print(f"[COORDINATOR DEBUG] Actor added to list, new count: {len(self.actors)}")
+        
         # Get node info for this actor
         try:
+            print(f"[COORDINATOR DEBUG] Attempting to get node info for actor {actor_id}...")
             node_info = ray.get(actor.get_node_info.remote())
+            print(f"[COORDINATOR DEBUG] Node info received: {node_info}")
+            
             self.actor_info[actor_id] = {
                 'model_name': model_name,
                 'node_hostname': node_info['hostname'],
@@ -423,7 +432,9 @@ class PromptCoordinator:
                 'node_id': node_info['ray_node_id'],
                 'node_label': node_info.get('node_label', 'Unknown Node')
             }
-        except:
+            print(f"[COORDINATOR DEBUG] Actor info stored: {self.actor_info[actor_id]}")
+        except Exception as e:
+            print(f"[COORDINATOR DEBUG] Failed to get node info: {e}")
             # Fallback if node info not available
             self.actor_info[actor_id] = {
                 'model_name': model_name,
@@ -434,6 +445,8 @@ class PromptCoordinator:
             }
         
         print(f"[COORDINATOR] Registered actor {actor_id} ({model_name}) on {self.actor_info[actor_id]['node_label']}")
+        print(f"[COORDINATOR DEBUG] Total actors now: {len(self.actors)}")
+        print(f"[COORDINATOR DEBUG] Actor info keys: {list(self.actor_info.keys())}")
         return actor_id
 
     def get_actor_count(self) -> int:
@@ -577,23 +590,27 @@ class PromptCoordinator:
         
         return consolidated_result
 
-def run_head_mode(config: Dict[str, Any]):
-    """Run the application in head mode (coordinator only)."""
+def run_head_mode(config):
+    """Run the cluster coordinator in head mode."""
     print("\n" + "="*80)
     print("🎯 [HEAD NODE STARTING] Distributed Ray Cluster Coordinator")
     print("="*80)
     logger.info("Starting Ray cluster coordinator in head mode")
     
-    # Initialize Ray in head mode
-    ray.init(
-        include_dashboard=True,
-        dashboard_host='0.0.0.0',
-        dashboard_port=8265,
-        log_to_driver=True
-    )
-    
-    print("\n✅ [CLUSTER STATUS] Ray Cluster Started Successfully")
-    logger.info("Ray cluster initialized in head mode")
+    try:
+        # Connect to existing Ray session (started by startup script)
+        # Don't provide address or resource arguments when connecting to existing session
+        ray.init(
+            ignore_reinit_error=True,
+            log_to_driver=True
+        )
+        logger.info("Connected to existing Ray session")
+        print("✅ [CLUSTER STATUS] Connected to Ray Cluster Successfully")
+        
+    except Exception as e:
+        print(f"❌ [ERROR] Failed to connect to Ray session: {e}")
+        logger.error(f"Failed to connect to Ray session: {e}")
+        raise
     
     # Head node no longer loads models - it's a pure coordinator
     print("\n🎯 [COORDINATOR MODE] Head Node is Coordinator Only")
@@ -606,10 +623,28 @@ def run_head_mode(config: Dict[str, Any]):
     
     # Create the prompt coordinator as a named actor in the default namespace
     # It will start with no actors and discover them as workers join
-    prompt_coordinator = PromptCoordinator.options(name="prompt_coordinator", namespace="default").remote([])
-    print(f"✅ Prompt Coordinator created and registered as 'prompt_coordinator'")
-    print(f"📡 Coordinator will discover worker actors as they join")
-    print(f"🎮 Use realtime_prompt_client.py to send prompts interactively")
+    try:
+        prompt_coordinator = PromptCoordinator.options(
+            name="prompt_coordinator", 
+            namespace="default",
+            lifetime="detached"  # Ensure actor survives head node restarts
+        ).remote([])
+        
+        print(f"✅ Prompt Coordinator created and registered as 'prompt_coordinator'")
+        print(f"📡 Coordinator will discover worker actors as they join")
+        print(f"🎮 Use real_interactive_prompts.py to send prompts interactively")
+        
+        # Verify the coordinator is accessible
+        try:
+            actor_count = ray.get(prompt_coordinator.get_actor_count.remote())
+            print(f"✅ Coordinator verification: {actor_count} actors currently registered")
+        except Exception as e:
+            print(f"⚠️  Coordinator verification failed: {e}")
+            
+    except Exception as e:
+        print(f"❌ [ERROR] Failed to create prompt coordinator: {e}")
+        logger.error(f"Failed to create prompt coordinator: {e}")
+        raise
     
     # Keep the cluster running for worker nodes to join
     print(f"\n" + "="*80)
@@ -623,20 +658,36 @@ def run_head_mode(config: Dict[str, Any]):
         while True:
             time.sleep(10)
             # Print cluster status
-            cluster_resources = ray.cluster_resources()
-            print(f"\n📈 [CLUSTER STATUS] Resources: {cluster_resources}")
-            
-            # Try to get the coordinator to check available actors
             try:
-                coordinator = ray.get_actor("prompt_coordinator", namespace="default")
-                actor_count = ray.get(coordinator.get_actor_count.remote())
-                print(f"🤖 [ACTOR STATUS] Available inference actors: {actor_count}")
+                cluster_resources = ray.cluster_resources()
+                print(f"\n📈 [CLUSTER STATUS] Resources: {cluster_resources}")
+                
+                # Try to get the coordinator to check available actors
+                try:
+                    coordinator = ray.get_actor("prompt_coordinator", namespace="default")
+                    actor_count = ray.get(coordinator.get_actor_count.remote())
+                    print(f"🤖 [ACTOR STATUS] Available inference actors: {actor_count}")
+                    
+                    # If we have actors, show more details
+                    if actor_count > 0:
+                        try:
+                            actor_info = ray.get(coordinator.get_actor_info.remote())
+                            print(f"📊 [ACTOR DETAILS] {actor_info['total_actors']} actors from {len(actor_info['cluster_nodes'])} nodes")
+                        except Exception as e:
+                            print(f"⚠️  Could not get detailed actor info: {e}")
+                            
+                except Exception as e:
+                    print(f"🤖 [ACTOR STATUS] No actors available yet: {e}")
+                    
             except Exception as e:
-                print(f"🤖 [ACTOR STATUS] No actors available yet: {e}")
+                print(f"❌ [ERROR] Failed to get cluster status: {e}")
                 
     except KeyboardInterrupt:
         print("\n🛑 [SHUTDOWN] Shutting down Ray cluster...")
-        ray.shutdown()
+        try:
+            ray.shutdown()
+        except:
+            pass
 
 def run_worker_mode(config: Dict[str, Any]):
     """Run the application in worker mode."""
@@ -645,8 +696,21 @@ def run_worker_mode(config: Dict[str, Any]):
     print("="*80)
     logger.info("Starting Ray worker node")
     
-    # Ray is already initialized by the startup script, so we don't need to call ray.init()
-    # The startup script handles connecting to the Ray cluster
+    # Ensure Ray is properly initialized
+    try:
+        # Check if Ray is already initialized
+        ray.get_runtime_context()
+        print("✅ Ray already initialized")
+    except Exception:
+        print("🔄 Initializing Ray connection...")
+        # Initialize Ray connection to the cluster
+        ray.init(
+            address="ray-head:6379",
+            namespace="default",
+            log_to_driver=True,
+            ignore_reinit_error=True
+        )
+        print("✅ Ray initialized successfully")
     
     print("\n✅ [CLUSTER CONNECTION] Worker Node Successfully Joined Cluster")
     logger.info("Worker node successfully joined the cluster")
@@ -661,15 +725,19 @@ def run_worker_mode(config: Dict[str, Any]):
     print(f"\n🤖 [MODEL DEPLOYMENT] Creating Model Instances on Worker Node")
     logger.info("Creating model instances on worker node...")
     
-    model_names = config.get('models', {}).get('preload', ["tiny-gpt2", "distilbert", "flan-t5-small"])
+    model_names = config.get('models', {}).get('preload', ["gpt2"])  # Simplified to just gpt2 for testing
     actors = []
     
     for model_name in model_names:
         if model_name in MODEL_CONFIGS:
-            actor = LLMInferenceActor.remote(model_name)
-            actors.append(actor)
-            print(f"   ✅ Created actor for model: {model_name}")
-            logger.info(f"Created actor for model: {model_name}")
+            try:
+                actor = LLMInferenceActor.remote(model_name)
+                actors.append(actor)
+                print(f"   ✅ Created actor for model: {model_name}")
+                logger.info(f"Created actor for model: {model_name}")
+            except Exception as e:
+                print(f"   ❌ Failed to create actor for {model_name}: {e}")
+                logger.error(f"Failed to create actor for {model_name}: {e}")
         else:
             print(f"   ⚠️  Unknown model: {model_name}")
             logger.warning(f"Unknown model: {model_name}")
@@ -681,36 +749,108 @@ def run_worker_mode(config: Dict[str, Any]):
     
     print(f"   📊 Total actors created on worker: {len(actors)}")
     
-    # Register actors with the coordinator
+    # Register actors with the coordinator with improved retry logic
     print(f"\n📡 [ACTOR REGISTRATION] Registering Actors with Coordinator")
-    try:
-        coordinator = ray.get_actor("prompt_coordinator", namespace="default")
-        print(f"   ✅ Found coordinator, registering {len(actors)} actors...")
-        
-        for i, actor in enumerate(actors):
-            actor_id = ray.get(coordinator.register_actor.remote(actor, model_names[i]))
-            print(f"   ✅ Registered actor {i+1}/{len(actors)} with ID: {actor_id}")
-        
-        print(f"   🎯 All actors registered successfully!")
-        
-        # Get coordinator status
-        actor_info = ray.get(coordinator.get_actor_info.remote())
-        print(f"   📊 Coordinator reports {actor_info['total_actors']} total actors available")
-        
-    except Exception as e:
-        print(f"   ❌ Failed to register actors with coordinator: {e}")
-        print(f"   ⚠️  Actors will work locally but not be coordinated")
-        logger.error(f"Failed to register actors with coordinator: {e}")
+    
+    # Enhanced retry mechanism for coordinator registration
+    max_retries = 10
+    retry_delay = 15  # seconds
+    registration_success = False
+    
+    for attempt in range(max_retries):
+        try:
+            print(f"   [ATTEMPT {attempt + 1}/{max_retries}] Attempting to discover coordinator actor...")
+            
+            # Wait before trying to connect (longer wait for first few attempts)
+            if attempt > 0:
+                wait_time = retry_delay + (attempt * 5)  # Progressive backoff
+                print(f"   [WAIT] Waiting {wait_time}s before retry...")
+                time.sleep(wait_time)
+            
+            # Try to get the coordinator actor
+            try:
+                coordinator = ray.get_actor("prompt_coordinator", namespace="default")
+                print("   ✅ Coordinator actor found!")
+            except Exception as e:
+                print(f"   ❌ Coordinator actor NOT found: {e}")
+                if attempt < max_retries - 1:
+                    print(f"   🔄 Will retry in {retry_delay + (attempt * 5)}s...")
+                    continue
+                else:
+                    raise Exception(f"Failed to find coordinator after {max_retries} attempts: {e}")
+            
+            print(f"   ✅ Found coordinator, registering {len(actors)} actors...")
+            
+            # Register each actor with individual retry logic
+            successful_registrations = 0
+            for i, actor in enumerate(actors):
+                print(f"   [DEBUG] Registering actor {i+1}/{len(actors)}...")
+                actor_retry_count = 0
+                actor_max_retries = 3
+                
+                while actor_retry_count < actor_max_retries:
+                    try:
+                        actor_id = ray.get(coordinator.register_actor.remote(actor, model_names[i]))
+                        print(f"   ✅ Registered actor {i+1}/{len(actors)} with ID: {actor_id}")
+                        successful_registrations += 1
+                        break
+                    except Exception as e:
+                        actor_retry_count += 1
+                        print(f"   ⚠️  Actor registration attempt {actor_retry_count}/{actor_max_retries} failed: {e}")
+                        if actor_retry_count < actor_max_retries:
+                            time.sleep(5)  # Short wait between actor retries
+                        else:
+                            print(f"   ❌ Failed to register actor {i+1}/{len(actors)} after {actor_max_retries} attempts")
+                            raise
+            
+            if successful_registrations == len(actors):
+                print(f"   🎯 All {successful_registrations} actors registered successfully!")
+                registration_success = True
+                
+                # Verify registration with coordinator
+                try:
+                    actor_info = ray.get(coordinator.get_actor_info.remote())
+                    print(f"   📊 Coordinator reports {actor_info['total_actors']} total actors available")
+                    
+                    # Double-check our actors are in the list
+                    if actor_info['total_actors'] >= len(actors):
+                        print(f"   ✅ Registration verified! Coordinator has {actor_info['total_actors']} actors")
+                    else:
+                        print(f"   ⚠️  Registration may be incomplete. Expected {len(actors)}, got {actor_info['total_actors']}")
+                        
+                except Exception as e:
+                    print(f"   ⚠️  Could not verify coordinator status: {e}")
+                
+                break
+            else:
+                raise Exception(f"Only {successful_registrations}/{len(actors)} actors registered successfully")
+                
+        except Exception as e:
+            print(f"   ❌ Attempt {attempt + 1} failed: {e}")
+            if attempt < max_retries - 1:
+                print(f"   🔄 Will retry in {retry_delay + (attempt * 5)} seconds...")
+            else:
+                print(f"   ❌ Failed to register actors with coordinator after {max_retries} attempts: {e}")
+                print(f"   ⚠️  Actors will work locally but not be coordinated")
+                logger.error(f"Failed to register actors with coordinator: {e}")
+                break
     
     print(f"\n" + "="*80)
-    print("🟢 [WORKER NODE READY] Active and Waiting for Tasks")
+    if registration_success:
+        print("🟢 [WORKER NODE READY] Active and Coordinated")
+    else:
+        print("🟡 [WORKER NODE READY] Active but Not Coordinated")
     print("="*80)
     print(f"✅ Loaded {len(actors)} models and ready for inference")
     print(f"🔄 Worker node will remain active for incoming requests")
     print(f"📊 Models available: {', '.join(model_names)}")
     print(f"📍 Node: {node_info['hostname']} ({node_info['ip_address']})")
+    if registration_success:
+        print(f"🎯 Status: Coordinated with cluster")
+    else:
+        print(f"⚠️  Status: Running independently (coordination failed)")
     
-    # Keep the worker running
+    # Keep the worker running with periodic status updates
     try:
         while True:
             time.sleep(30)
@@ -721,6 +861,16 @@ def run_worker_mode(config: Dict[str, Any]):
             print(f"   📍 IP: {current_node_info['ip_address']}")
             print(f"   🤖 Active Models: {len(actors)}")
             print(f"   ⏰ Time: {datetime.now().strftime('%H:%M:%S')}")
+            
+            # Periodically check coordinator status
+            if registration_success and time.time() % 300 < 30:  # Every ~5 minutes
+                try:
+                    coordinator = ray.get_actor("prompt_coordinator", namespace="default")
+                    actor_info = ray.get(coordinator.get_actor_info.remote())
+                    print(f"   📊 Coordinator Status: {actor_info['total_actors']} total actors")
+                except Exception as e:
+                    print(f"   ⚠️  Coordinator check failed: {e}")
+                    
     except KeyboardInterrupt:
         print("\n🛑 [SHUTDOWN] Shutting down worker node...")
         ray.shutdown()

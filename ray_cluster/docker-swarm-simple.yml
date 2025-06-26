@@ -1,0 +1,88 @@
+version: '3.8'
+
+services:
+  # Ray Head Node (coordinator only - lightweight)
+  ray-head:
+    image: ray-cluster-head:latest
+    ports:
+      - "6379:6379"      # Ray port
+      - "8265:8265"      # Ray dashboard
+    environment:
+      - RAY_DISABLE_DEDUP=1
+      - RAY_DISABLE_CUSTOM_LOGGER=1
+      - PYTHONUNBUFFERED=1
+    volumes:
+      - ray-models:/app/models
+      - ray-head-data:/tmp/ray
+    networks:
+      - ray-cluster
+    deploy:
+      mode: replicated
+      replicas: 1
+      resources:
+        limits:
+          memory: 2048M
+          cpus: '1.0'
+        reservations:
+          memory: 500M
+          cpus: '0.5'
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+        window: 120s
+    healthcheck:
+      test: ["CMD", "/app/health_check.sh"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  # Ray Worker Node (inference - more resources)
+  ray-worker:
+    image: ray-cluster-worker:latest
+    environment:
+      - RAY_HEAD_ADDRESS=ray-head:6379
+      - CUDA_VISIBLE_DEVICES=
+      - RAY_DISABLE_DEDUP=1
+      - RAY_DISABLE_CUSTOM_LOGGER=1
+      - PYTHONUNBUFFERED=1
+    volumes:
+      - ray-models:/app/models
+      - ray-worker-data:/tmp/ray
+    networks:
+      - ray-cluster
+    deploy:
+      mode: replicated
+      replicas: 1  # Start with just 1 worker for stability
+      resources:
+        limits:
+          memory: 3G
+          cpus: '2.0'
+        reservations:
+          memory: 2G
+          cpus: '1.0'
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+        window: 120s
+    healthcheck:
+      test: ["CMD", "/app/health_check.sh"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+volumes:
+  ray-head-data:
+    driver: local
+  ray-worker-data:
+    driver: local
+  ray-models:
+    driver: local
+
+networks:
+  ray-cluster:
+    driver: overlay
+    attachable: true 
