@@ -1,54 +1,42 @@
 #!/bin/bash
 
-# Build script for Docker Swarm Ray Cluster
-# This script builds the necessary images for the distributed Ray cluster
+# Simple build script for Docker Swarm deployment
+# This script builds head and worker images directly without using a base image
 
 set -e
 
-echo "🔨 [BUILDING] Docker Swarm Ray Cluster Images"
-echo "=============================================="
+echo "🔨 Building Ray Cluster Images for Docker Swarm"
+echo "================================================"
 
-# Build base image first
-echo "📦 [BUILDING] Base image..."
-docker build -f Dockerfile.base -t ray-cluster-base:latest .
+# Clean up any existing containers from old setup
+echo "🧹 Cleaning up old containers..."
+docker stop ray-cluster-head-laptop ray-cluster-worker-laptop 2>/dev/null || true
+docker rm ray-cluster-head-laptop ray-cluster-worker-laptop 2>/dev/null || true
 
-if [ $? -eq 0 ]; then
-    echo "✅ [SUCCESS] Base image built successfully"
-else
-    echo "❌ [ERROR] Failed to build base image"
-    exit 1
-fi
+# Remove old images to ensure clean build
+echo "🗑️  Removing old images..."
+docker rmi ray-cluster-head:latest ray-cluster-worker:latest ray-cluster-client:latest 2>/dev/null || true
 
 # Build head node image
-echo "📦 [BUILDING] Head node image..."
-docker build -f Dockerfile.head -t ray-cluster-head:latest .
-
-if [ $? -eq 0 ]; then
-    echo "✅ [SUCCESS] Head node image built successfully"
-else
-    echo "❌ [ERROR] Failed to build head node image"
-    exit 1
-fi
+echo "🏗️  Building head node image..."
+docker build -t ray-cluster-head:latest -f Dockerfile.head .
 
 # Build worker node image
-echo "📦 [BUILDING] Worker node image..."
-docker build -f Dockerfile.worker -t ray-cluster-worker:latest .
+echo "🏗️  Building worker node image..."
+docker build -t ray-cluster-worker:latest -f Dockerfile.worker .
 
-if [ $? -eq 0 ]; then
-    echo "✅ [SUCCESS] Worker node image built successfully"
-else
-    echo "❌ [ERROR] Failed to build worker node image"
-    exit 1
-fi
+# Build client image
+echo "🏗️  Building client image..."
+docker build -t ray-cluster-client:latest -f Dockerfile.client .
 
 echo ""
-echo "🎉 [SUCCESS] All images built successfully!"
-echo "📋 [IMAGES] Available images:"
+echo "✅ All images built successfully!"
+echo ""
+echo "📋 Built images:"
 docker images | grep ray-cluster
-
 echo ""
-echo "🚀 [NEXT STEPS] To deploy the cluster:"
-echo "   1. Initialize Docker Swarm: docker swarm init"
-echo "   2. Deploy the stack: docker stack deploy -c docker-swarm.yml ray-cluster"
-echo "   3. Check status: docker stack services ray-cluster"
-echo "   4. Scale workers: docker service scale ray-cluster_ray-worker=3" 
+echo "🚀 To deploy the cluster, run:"
+echo "   ./deploy-swarm.sh"
+echo ""
+echo "🎮 To run the demo, run:"
+echo "   docker run --rm -it --network ray-cluster_ray-cluster ray-cluster-client:latest" 

@@ -147,11 +147,11 @@ def real_interactive_prompts():
     
     while connection_attempt < max_connection_attempts:
         try:
-            print(f"   [ATTEMPT {connection_attempt + 1}/{max_connection_attempts}] Connecting to ray-head:6379...")
+            print(f"   [ATTEMPT {connection_attempt + 1}/{max_connection_attempts}] Connecting to ray://ray-head:10001...")
             
             # Initialize Ray connection with better configuration
             ray.init(
-                address="ray-head:6379", 
+                address="ray://ray-head:10001", 
                 namespace="default",
                 log_to_driver=False,  # Reduce log noise
                 ignore_reinit_error=True
@@ -170,7 +170,7 @@ def real_interactive_prompts():
             else:
                 print(f"❌ Failed to connect to Ray cluster after {max_connection_attempts} attempts")
                 print("   Please ensure the cluster is running and accessible")
-                return
+        return
     
     # Get the prompt coordinator with retry logic
     print("🎯 [COORDINATOR] Looking for prompt coordinator...")
@@ -215,7 +215,7 @@ def real_interactive_prompts():
                     print(f"📊 Cluster has {actor_info['total_actors']} actors from {len(actor_info['cluster_nodes'])} nodes")
                 except Exception as e:
                     print(f"⚠️  Could not get detailed actor info: {e}")
-                    
+        
         except Exception as e:
             print(f"❌ Error getting actor count: {e}")
             print("⚠️  Running in simulation mode")

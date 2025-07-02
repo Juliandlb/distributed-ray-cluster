@@ -15,6 +15,7 @@ echo "Starting Ray head process..."
 ray start --head \
     --port=6379 \
     --dashboard-port=8265 \
+    --ray-client-server-port=10001 \
     --object-store-memory=500000000 \
     --num-cpus=1 \
     --temp-dir=/tmp/ray

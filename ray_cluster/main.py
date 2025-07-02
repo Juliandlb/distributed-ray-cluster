@@ -302,10 +302,14 @@ class LLMInferenceActor:
         # Track memory before model loading
         initial_memory = self._get_memory_usage()
         
-        # Load the model
-        print(f"[LOADING] Loading model: {self.model_config['model_id']}")
+        # Load the model with CPU-only configuration
+        print(f"[LOADING] Loading model: {self.model_config['model_id']} (CPU-only)")
         self.tokenizer = AutoTokenizer.from_pretrained(self.model_config['model_id'])
-        self.model = AutoModelForCausalLM.from_pretrained(self.model_config['model_id'])
+        self.model = AutoModelForCausalLM.from_pretrained(
+            self.model_config['model_id'],
+            torch_dtype=torch.float32,  # Use float32 for CPU
+            device_map="cpu"  # Force CPU usage
+        )
         
         # Track memory after model loading
         final_memory = self._get_memory_usage()
@@ -352,7 +356,7 @@ class LLMInferenceActor:
             # Tokenize input
             inputs = self.tokenizer.encode(prompt, return_tensors="pt")
             
-            # Generate response
+            # Generate response (CPU-only)
             with torch.no_grad():
                 outputs = self.model.generate(
                     inputs,
@@ -806,24 +810,21 @@ def run_worker_mode(config: Dict[str, Any]):
             if successful_registrations == len(actors):
                 print(f"   🎯 All {successful_registrations} actors registered successfully!")
                 registration_success = True
+                break  # Successfully registered all actors, exit retry loop
+            
+            # Verify registration with coordinator
+            try:
+                actor_info = ray.get(coordinator.get_actor_info.remote())
+                print(f"   📊 Coordinator reports {actor_info['total_actors']} total actors available")
                 
-                # Verify registration with coordinator
-                try:
-                    actor_info = ray.get(coordinator.get_actor_info.remote())
-                    print(f"   📊 Coordinator reports {actor_info['total_actors']} total actors available")
+                # Double-check our actors are in the list
+                if actor_info['total_actors'] >= len(actors):
+                    print(f"   ✅ Registration verified! Coordinator has {actor_info['total_actors']} actors")
+                else:
+                    print(f"   ⚠️  Registration may be incomplete. Expected {len(actors)}, got {actor_info['total_actors']}")
                     
-                    # Double-check our actors are in the list
-                    if actor_info['total_actors'] >= len(actors):
-                        print(f"   ✅ Registration verified! Coordinator has {actor_info['total_actors']} actors")
-                    else:
-                        print(f"   ⚠️  Registration may be incomplete. Expected {len(actors)}, got {actor_info['total_actors']}")
-                        
-                except Exception as e:
-                    print(f"   ⚠️  Could not verify coordinator status: {e}")
-                
-                break
-            else:
-                raise Exception(f"Only {successful_registrations}/{len(actors)} actors registered successfully")
+            except Exception as e:
+                print(f"   ⚠️  Could not verify coordinator status: {e}")
                 
         except Exception as e:
             print(f"   ❌ Attempt {attempt + 1} failed: {e}")

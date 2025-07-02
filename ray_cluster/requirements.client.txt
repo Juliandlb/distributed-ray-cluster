@@ -1,0 +1,2 @@
+ray[client]==2.47.1
+requests>=2.25.0 

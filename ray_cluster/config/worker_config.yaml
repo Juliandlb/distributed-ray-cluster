@@ -2,16 +2,16 @@ ray:
   worker:
     head_address: ${RAY_HEAD_ADDRESS}
     port: 0  # Auto-assign
-    object_store_memory: 500000000  # 500MB (reduced from 1GB)
-    num_cpus: 2  # Reduced from 4
+    object_store_memory: 200000000  # 200MB (reduced from 500MB)
+    num_cpus: 1  # Reduced from 2
     num_gpus: ${CUDA_VISIBLE_DEVICES:-0}
     temp_dir: /tmp/ray
     log_to_driver: false
     logging_level: INFO
     
   resources:
-    memory: 2000000000  # 2GB (reduced from 4GB)
-    cpu: 2  # Reduced from 4
+    memory: 1000000000  # 1GB (reduced from 2GB)
+    cpu: 1  # Reduced from 2
     gpu: ${CUDA_VISIBLE_DEVICES:-0}
 
 models:
