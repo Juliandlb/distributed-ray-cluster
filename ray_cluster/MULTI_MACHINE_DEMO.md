@@ -1,17 +1,17 @@
-# 🚀 Multi-Machine Ray Cluster Demo
+# 🚀 Multi-Machine Ray Cluster Demo (Docker Swarm)
 
-This guide shows how to run a Ray cluster across multiple machines with just one command per machine.
+This guide shows how to run a Ray cluster across multiple machines using Docker Swarm for internet-ready, secure, and scalable deployment.
 
 ## 🎯 Overview
 
-- **Machine 1 (Head Node)**: Runs the Ray cluster coordinator
-- **Machine 2 (Worker Node)**: Runs a Ray worker that connects to the head node
-- **Both machines**: Use Docker containers for easy deployment
+- **Manager Node (Head)**: Runs the Ray cluster coordinator and manages the Swarm
+- **Worker Nodes**: Join the Swarm and run Ray workers
+- **All nodes**: Use Docker Swarm overlay network for secure communication
 
-## 🖥️ Machine 1: Start the Cluster (Head Node)
+## 🖥️ Manager Node: Start the Cluster
 
 ```bash
-# On the head node machine
+# On the manager (head) node
 cd /path/to/ray_cluster
 chmod +x start_cluster.sh
 ./start_cluster.sh
@@ -21,159 +21,75 @@ chmod +x start_cluster.sh
 ```
 🚀 Starting Ray Cluster (Head Node)
 ==================================
-📍 Head Node IP: 192.168.1.100
-🔧 Initializing Docker Swarm...
-🔨 Building and deploying Ray cluster...
-⏳ Waiting for services to be ready...
-
-🎯 CLUSTER READY!
-==================
-📍 Head Node IP: 192.168.1.100
-🔌 Ray Port: 6379
-📊 Dashboard: http://192.168.1.100:8265
-
-🔗 To connect a remote worker, run:
-   ./start_standalone_worker.sh 192.168.1.100
-
-✅ Cluster is running and ready for remote workers!
+📍 Public IP: <manager-public-ip>
+🔑 Join Token: <token>
+...
 ```
 
-## 🤖 Machine 2: Join as Remote Worker
+## 🤖 Worker Node: Join the Swarm
 
 ```bash
-# On the worker machine
-cd /path/to/ray_cluster
-chmod +x start_standalone_worker.sh
-./start_standalone_worker.sh 192.168.1.100
+# On each remote worker node
+# Use the join token and public IP from the manager's output
+sudo docker swarm join --token <token> <manager-public-ip>:2377
 ```
 
-**Expected Output:**
+**Verify on manager:**
+```bash
+docker node ls
 ```
-🤖 Starting Standalone Ray Worker
-================================
-📍 Worker IP: 192.168.1.101
-🔗 Connecting to Head: 192.168.1.100:6379
-🔨 Building worker image...
-🚀 Starting standalone worker container...
 
-✅ Standalone worker started!
-============================
-📍 Worker IP: 192.168.1.101
-🔗 Connected to: 192.168.1.100:6379
+## 🛠️ Deploy/Scale Ray Workers (from Manager)
+
+```bash
+# Deploy the stack (if not already running)
+./rebuild.sh
+
+# Scale up workers (from manager)
+docker service scale ray-cluster_ray-worker=3
 ```
 
 ## 🎮 Test the Multi-Machine Cluster
 
 ```bash
-# On the head node machine
+# On the manager node
 docker run --rm -it --network ray-cluster_ray-cluster ray-cluster-client:latest
-```
-
-**Example Interaction:**
-```
-🎮 [REAL INTERACTIVE PROMPTS] Distributed Ray Cluster Client
-============================================================
-🔗 Connecting to Ray cluster...
-✅ Connected to Ray cluster
-🎯 [COORDINATOR] Looking for prompt coordinator...
-✅ Found prompt coordinator
-🤖 Available inference actors: 1
-
-🎮 [INTERACTIVE MODE] Type your prompts below
-=============================================
-
-🤖 [PROMPT] hello world
-📤 [SENDING] Sending to coordinator...
-📥 [RESPONSE] Received in 2.34s
-
-💬 [RESPONSES]
-   ✅ Actor 0 (gpt2)
-      Worker Node #1: worker-machine (192.168.1.101)
-      Processing time: 2.34s
-      Response: Hello world! How can I help you today?
-
-🎯 [ANSWERED BY] Worker Node #1
-   Hostname: worker-machine (192.168.1.101)
-   Model: gpt2
-   Processing time: 2.34s
 ```
 
 ## 📊 Monitor the Cluster
 
-### Ray Dashboard
-- **URL**: http://192.168.1.100:8265
-- **Shows**: All nodes (head + remote workers), actors, resources
-
-### Check Worker Status
-```bash
-# On worker machine
-docker logs ray-standalone-worker
-
-# On head machine
-docker service logs ray-cluster_ray-head
-```
+- **Ray Dashboard**: http://<manager-public-ip>:8265
+- **Check Swarm nodes**: `docker node ls`
+- **Check Ray services**: `docker stack services ray-cluster`
+- **Check logs**: `docker service logs ray-cluster_ray-worker`
 
 ## 🔧 Troubleshooting
 
-### If Worker Can't Connect
-1. **Check network connectivity:**
-   ```bash
-   # On worker machine
-   ping 192.168.1.100
-   telnet 192.168.1.100 6379
-   ```
-
-2. **Check firewall settings:**
-   - Ensure port 6379 is open on the head node
-   - Ensure ports 12345-12346 are open on the head node
-
-3. **Check Docker network:**
-   ```bash
-   # On head machine
-   docker network ls
-   docker network inspect ray-cluster_ray-cluster
-   ```
-
-### If Head Node Can't Start
-1. **Check Docker Swarm:**
-   ```bash
-   docker info | grep Swarm
-   docker node ls
-   ```
-
-2. **Check ports:**
-   ```bash
-   netstat -tlnp | grep :6379
-   ```
+- **Open required ports on all nodes:**
+  - 2377/tcp (Swarm management)
+  - 7946/tcp, 7946/udp (Swarm communication)
+  - 4789/udp (Overlay network)
+  - 6379/tcp (Ray)
+  - 8265/tcp (Dashboard)
+- **If a worker can't join:**
+  - Check firewall and network connectivity
+  - Ensure Docker is running and up to date
+  - Use the correct join token and public IP
 
 ## 🧹 Cleanup
 
-### Stop Remote Worker
 ```bash
-# On worker machine
-docker stop ray-standalone-worker
-docker rm ray-standalone-worker
-```
-
-### Stop Head Cluster
-```bash
-# On head machine
+# Remove the stack (from manager)
 ./cleanup.sh
+
+# Remove a worker node (from worker)
+docker swarm leave
 ```
-
-## 🎯 Key Features
-
-1. **One Command Setup**: Each machine needs only one command
-2. **Standalone Workers**: Remote workers don't need Docker Swarm
-3. **Real Multi-Machine**: Workers run on different physical machines
-4. **Easy Monitoring**: Ray dashboard shows all nodes
-5. **Simple Testing**: Interactive client works from any machine
 
 ## 🚀 Next Steps
 
-- Add more worker machines: Run `./start_standalone_worker.sh <HEAD_IP>` on each
-- Scale workers: `docker service scale ray-cluster_ray-worker=3`
-- Add GPU support: Modify worker Dockerfile and scripts
-- Deploy to cloud: Use cloud IP addresses instead of local IPs
+- Add more workers: Join more nodes and scale the service
+- Use placement constraints for advanced scheduling
+- Monitor with Ray dashboard and Docker Swarm tools
 
-The demo is now ready for multi-machine deployment! 🎉 
+The demo is now ready for secure, scalable, internet-based deployment! 🎉 

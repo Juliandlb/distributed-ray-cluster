@@ -1,8 +1,8 @@
-# 🖥️ VM + Remote Worker Multi-Machine Setup
+# 🖥️ VM + Arch Linux Multi-Machine Setup
 
 This guide is specifically for your setup:
 - **VM (Head Node)**: `10.11.0.4` - Running the Ray cluster coordinator
-- **Remote Worker Node**: Your personal machine - Running the remote worker
+- **Arch Linux Laptop (Worker)**: Your personal machine - Running the remote worker
 
 ## 🖥️ **Step 1: VM Head Node Setup**
 
@@ -46,21 +46,14 @@ netstat -tlnp | grep -E ':(6379|8265|10001|12345|12346)'
 curl http://localhost:8265
 ```
 
-## 💻 **Step 2: Remote Worker Node Setup**
+## 💻 **Step 2: Arch Linux Laptop Worker Setup**
 
-### **2.1 Prepare Your Remote Worker Node**
+### **2.1 Prepare Your Arch Linux Laptop**
 
-First, ensure Docker is installed on your remote worker node:
+First, ensure Docker is installed on your Arch Linux laptop:
 ```bash
 # Install Docker (if not already installed)
-# For Arch Linux:
 sudo pacman -S docker
-
-# For Ubuntu/Debian:
-sudo apt update && sudo apt install docker.io
-
-# For CentOS/RHEL:
-sudo yum install docker
 
 # Start Docker service
 sudo systemctl start docker
@@ -73,7 +66,7 @@ sudo usermod -aG docker $USER
 
 ### **2.2 Clone the Repository**
 ```bash
-# On your remote worker node
+# On your Arch Linux laptop
 git clone https://github.com/Juliandlb/distributed-ray-cluster.git
 cd distributed-ray-cluster/ray_cluster
 ```
@@ -122,9 +115,9 @@ chmod +x start_standalone_worker.sh
 docker run --rm -it --network ray-cluster_ray-cluster ray-cluster-client:latest
 ```
 
-### **3.2 From Remote Worker Node**
+### **3.2 From Arch Linux Laptop**
 ```bash
-# You can also test from your remote worker (if you have the client image)
+# You can also test from your laptop (if you have the client image)
 docker run --rm -it ray-cluster-client:latest
 ```
 
@@ -132,12 +125,12 @@ docker run --rm -it ray-cluster-client:latest
 
 ### **4.1 Ray Dashboard**
 - **URL**: http://10.11.0.4:8265
-- **Check**: Should show both VM head node and remote worker
-- **Nodes**: Should see 2 nodes (VM + remote worker)
+- **Check**: Should show both VM head node and Arch Linux worker
+- **Nodes**: Should see 2 nodes (VM + laptop)
 
 ### **4.2 Check Worker Status**
 ```bash
-# On remote worker node
+# On Arch Linux laptop
 docker ps | grep ray-standalone-worker
 docker logs ray-standalone-worker
 
@@ -150,7 +143,7 @@ docker service logs ray-cluster_ray-head
 
 ### **5.1 Network Issues**
 ```bash
-# From remote worker node, test connectivity
+# From Arch Linux laptop, test connectivity
 ping 10.11.0.4
 telnet 10.11.0.4 6379
 curl http://10.11.0.4:8265
@@ -161,7 +154,7 @@ sudo netstat -tlnp | grep 6379
 ```
 
 ### **5.2 Firewall Issues**
-If you can't connect from remote worker to VM:
+If you can't connect from Arch Linux to VM:
 
 **On VM (if using UFW):**
 ```bash
@@ -177,33 +170,23 @@ sudo iptables -A INPUT -p tcp --dport 8265 -j ACCEPT
 sudo iptables -A INPUT -p tcp --dport 12345:12346 -j ACCEPT
 ```
 
-### **5.3 Docker Issues on Remote Worker**
+### **5.3 Docker Issues on Arch Linux**
 ```bash
-# If Docker doesn't work on remote worker
+# If Docker doesn't work on Arch Linux
 sudo systemctl status docker
 sudo journalctl -u docker
 
 # Reinstall Docker if needed
-# For Arch Linux:
 sudo pacman -R docker
 sudo pacman -S docker
-
-# For Ubuntu/Debian:
-sudo apt remove docker.io
-sudo apt install docker.io
-
-# For CentOS/RHEL:
-sudo yum remove docker
-sudo yum install docker
-
 sudo systemctl start docker
 ```
 
 ## 🧹 **Step 6: Cleanup**
 
-### **6.1 Stop Remote Worker**
+### **6.1 Stop Remote Worker (Arch Linux)**
 ```bash
-# On your remote worker node
+# On your Arch Linux laptop
 docker stop ray-standalone-worker
 docker rm ray-standalone-worker
 ```
@@ -219,8 +202,8 @@ docker rm ray-standalone-worker
 When everything works correctly:
 
 1. **VM Dashboard**: http://10.11.0.4:8265 shows 2 nodes
-2. **Interactive Test**: Prompts are processed on your remote worker node
-3. **Response Info**: Shows your remote worker's hostname and IP in responses
+2. **Interactive Test**: Prompts are processed on your Arch Linux laptop
+3. **Response Info**: Shows your laptop's hostname and IP in responses
 4. **Real Multi-Machine**: Processing happens across different physical machines
 
 ## 🚀 **Quick Test Commands**
@@ -229,11 +212,11 @@ When everything works correctly:
 # On VM - Start cluster
 ./start_cluster.sh
 
-# On remote worker node - Join as worker
+# On Arch Linux laptop - Join as worker
 ./start_standalone_worker.sh 10.11.0.4
 
 # On VM - Test the cluster
 docker run --rm -it --network ray-cluster_ray-cluster ray-cluster-client:latest
 ```
 
-Your VM + remote worker setup is ready! 🎉 
+Your VM + Arch Linux setup is ready! 🎉 
