@@ -42,11 +42,11 @@ services:
           - spread: node.labels.zone
       resources:
         limits:
-          memory: 1G  # Reduced from 2048M
-          cpus: '0.5'  # Reduced from 1.0
+          memory: 2G  # Increased to prevent OOM
+          cpus: '1.0'  # Increased for better performance
         reservations:
-          memory: 256M  # Reduced from 500M
-          cpus: '0.25'  # Reduced from 0.5
+          memory: 512M  # Increased to prevent OOM
+          cpus: '0.5'  # Increased for better performance
       restart_policy:
         condition: on-failure
         delay: 5s
@@ -103,11 +103,11 @@ services:
           - spread: node.labels.zone
       resources:
         limits:
-          memory: 2G  # Reduced from 3G
-          cpus: '1.5'  # Reduced from 2.0
+          memory: 3G  # Increased to prevent OOM
+          cpus: '2.0'  # Increased for better performance
         reservations:
-          memory: 1G  # Reduced from 2G
-          cpus: '0.5'  # Reduced from 1.0
+          memory: 1.5G  # Increased to prevent OOM
+          cpus: '1.0'  # Increased for better performance
       restart_policy:
         condition: on-failure
         delay: 5s

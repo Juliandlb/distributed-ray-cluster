@@ -605,6 +605,7 @@ def run_head_mode(config):
         # Connect to existing Ray session (started by startup script)
         # Don't provide address or resource arguments when connecting to existing session
         ray.init(
+            namespace="default",  # Add namespace to match other components
             ignore_reinit_error=True,
             log_to_driver=True
         )
