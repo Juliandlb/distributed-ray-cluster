@@ -1,12 +1,21 @@
-# 💻 Arch Linux Laptop Instructions
+# 💻 Remote Worker Node Instructions
 
-**Your VM is ready!** Now set up your Arch Linux laptop to join as a remote worker.
+**Your VM is ready!** Now set up your remote worker node to join the Ray cluster.
 
 ## 🚀 Quick Setup (5 minutes)
 
 ### **Step 1: Install Docker (if not installed)**
 ```bash
+# For Arch Linux:
 sudo pacman -S docker
+
+# For Ubuntu/Debian:
+sudo apt update && sudo apt install docker.io
+
+# For CentOS/RHEL:
+sudo yum install docker
+
+# Start Docker service
 sudo systemctl start docker
 sudo systemctl enable docker
 sudo usermod -aG docker $USER
@@ -63,9 +72,9 @@ On your VM, run:
 docker run --rm -it --network ray-cluster_ray-cluster ray-cluster-client:latest
 ```
 
-### **Option 2: Test from Arch Linux Laptop**
+### **Option 2: Test from Remote Worker Node**
 ```bash
-# Build client image on your laptop
+# Build client image on your remote worker
 docker build -f Dockerfile.client -t ray-cluster-client:latest .
 
 # Run the test
@@ -110,9 +119,9 @@ sudo systemctl restart docker
 ## 🎯 Success Criteria
 
 ✅ You should see:
-1. Worker container running on your laptop
+1. Worker container running on your remote worker node
 2. Worker appears in Ray dashboard at http://10.11.0.4:8265
-3. Interactive prompts are processed on your laptop
-4. Response shows your laptop's hostname/IP
+3. Interactive prompts are processed on your remote worker node
+4. Response shows your remote worker's hostname/IP
 
-**That's it! Your Arch Linux laptop is now a remote worker in the VM's Ray cluster! 🎉** 
+**That's it! Your remote worker node is now part of the VM's Ray cluster! 🎉** 
