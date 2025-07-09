@@ -39,7 +39,7 @@ cd distributed-ray-cluster/ray_cluster
 🔑 Join Token: <swarm-join-token>
 
 🔗 To connect a remote worker, run this on the remote machine:
-   docker swarm join --token <swarm-join-token> <your-public-ip>:2377
+   ./join_swarm_worker.sh
 
 After joining, scale workers from the manager (this node):
    docker service scale ray-cluster_ray-worker=<num>
@@ -52,28 +52,33 @@ After joining, scale workers from the manager (this node):
 On each remote worker machine:
 
 ```bash
-# Install Docker (if not already installed)
-# Ubuntu/Debian:
-sudo apt update && sudo apt install docker.io
-sudo systemctl start docker
-sudo systemctl enable docker
-sudo usermod -aG docker $USER
+# Clone the repository (if not already done)
+git clone https://github.com/Juliandlb/distributed-ray-cluster.git
+cd distributed-ray-cluster/ray_cluster
 
-# Arch Linux:
-sudo pacman -S docker
-sudo systemctl start docker
-sudo systemctl enable docker
-sudo usermod -aG docker $USER
-
-# Log out and back in, or run: newgrp docker
-
-# Join the Swarm using the token from Step 1
-docker swarm join --token <swarm-join-token> <manager-public-ip>:2377
+# Run the automated join script
+./join_swarm_worker.sh
 ```
 
 **Expected Output:**
 ```
+🤖 Joining Docker Swarm Cluster
+===============================
+📍 Manager IP: 52.224.243.185
+🔑 Join Token: SWMTKN-1-...
+🔍 Testing connectivity to manager node...
+✅ Connectivity test passed!
+
+🔗 Joining Docker Swarm cluster...
 This node joined a swarm as a worker.
+
+✅ Successfully joined the Docker Swarm cluster!
+```
+
+**Alternative: Direct Ray Connection**
+If Docker Swarm doesn't work due to network restrictions, you can use direct Ray connection:
+```bash
+./setup_laptop_worker.sh
 ```
 
 ## 🛠️ Step 3: Scale Workers (from Manager)
@@ -152,13 +157,20 @@ docker stats
 ## 🔧 Troubleshooting
 
 ### If a worker can't join the Swarm:
-1. **Check network connectivity:**
+1. **Use the automated script:**
    ```bash
-   ping <manager-public-ip>
-   telnet <manager-public-ip> 2377
+   ./join_swarm_worker.sh
+   ```
+   The script will test connectivity and provide troubleshooting steps.
+
+2. **Manual troubleshooting:**
+   ```bash
+   # Check network connectivity:
+   ping 52.224.243.185
+   telnet 52.224.243.185 2377
    ```
 
-2. **Check firewall settings:**
+3. **Check firewall settings:**
    ```bash
    # On all nodes, open required ports:
    sudo ufw allow 2377/tcp    # Swarm management
@@ -169,10 +181,15 @@ docker stats
    sudo ufw allow 8265/tcp    # Dashboard
    ```
 
-3. **Check Docker status:**
+4. **Check Docker status:**
    ```bash
    sudo systemctl status docker
    docker info | grep Swarm
+   ```
+
+5. **Alternative: Use direct Ray connection:**
+   ```bash
+   ./setup_laptop_worker.sh
    ```
 
 ### If workers don't appear in Ray dashboard:
