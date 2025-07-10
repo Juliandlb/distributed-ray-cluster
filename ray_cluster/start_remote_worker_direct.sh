@@ -10,6 +10,7 @@ if [ -z "$1" ]; then
 fi
 
 HEAD_NODE_IP="$1"
+RAY_HEAD_ADDRESS="$HEAD_NODE_IP:6379"
 
 # Remove any old container
 if docker ps -a --format '{{.Names}}' | grep -Eq '^ray-direct-worker$'; then
@@ -24,7 +25,7 @@ cat <<EOF
 🤖 Starting Direct Ray Worker
 ============================
 📍 Worker IP: $WORKER_IP
-🔗 Connecting to Head: $HEAD_NODE_IP:6379
+🔗 Connecting to Head: $RAY_HEAD_ADDRESS
 🔨 Building worker image...
 EOF
 
@@ -32,5 +33,5 @@ docker build -f Dockerfile.worker -t ray-cluster-worker:latest .
 
 echo "🚀 Starting direct worker container..."
 docker run --rm --network host --name ray-direct-worker \
-  -e HEAD_NODE_IP="$HEAD_NODE_IP" \
+  -e RAY_HEAD_ADDRESS="$RAY_HEAD_ADDRESS" \
   ray-cluster-worker:latest 
