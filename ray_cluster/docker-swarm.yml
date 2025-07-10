@@ -70,6 +70,7 @@ services:
   # Ray Worker Nodes (inference - more resources)
   ray-worker:
     image: ray-cluster-worker:latest
+    network_mode: host
     environment:
       - RAY_HEAD_ADDRESS=ray-head:6379
       - CUDA_VISIBLE_DEVICES=  # No GPU by default
@@ -91,8 +92,6 @@ services:
     volumes:
       - ray-models:/app/models
       - ray-worker-data:/tmp/ray
-    networks:
-      - ray-cluster
     deploy:
       mode: replicated
       replicas: 1  # Reduced from 2 to 1 worker
