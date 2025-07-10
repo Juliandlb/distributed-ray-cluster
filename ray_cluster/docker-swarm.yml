@@ -157,10 +157,11 @@ volumes:
 
 networks:
   ray-cluster:
-    driver: bridge
+    driver: overlay
+    attachable: true
     ipam:
       config:
-        - subnet: 172.20.0.0/16
+        - subnet: 10.10.0.0/16
     driver_opts:
       com.docker.network.bridge.enable_icc: "true"
       com.docker.network.bridge.enable_ip_masquerade: "true" 
