@@ -159,8 +159,14 @@ def load_config(config_path: str) -> Dict[str, Any]:
 
 def get_node_info() -> Dict[str, Any]:
     """Get information about the current node."""
+    try:
+        ip_address = socket.gethostbyname(socket.gethostname())
+    except socket.gaierror:
+        # Fallback to localhost if hostname resolution fails
+        ip_address = "127.0.0.1"
+    
     return {
-        'ip_address': socket.gethostbyname(socket.gethostname()),
+        'ip_address': ip_address,
         'hostname': socket.gethostname(),
         'ray_node_id': ray.get_runtime_context().get_node_id(),
         'cuda_available': torch.cuda.is_available() if torch is not None else False,
