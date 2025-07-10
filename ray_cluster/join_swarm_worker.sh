@@ -10,7 +10,7 @@ echo "==============================="
 
 # Azure VM Public IP and Join Token
 MANAGER_IP="52.224.243.185"
-JOIN_TOKEN="SWMTKN-1-65tvtnekv9wl3xc1v6cb594yx72htogru9t6fu27bxu3u7f6ff-4f84g3jt3gys2lyg0h7cerbi7"
+JOIN_TOKEN="SWMTKN-1-5sq0w766njqp6c6eg6kmswle36v870v1zswr82vv2tvzk88cih-5ib29em2adeov0g8206feyxp1"
 
 echo "📍 Manager IP: $MANAGER_IP"
 echo "🔑 Join Token: $JOIN_TOKEN"

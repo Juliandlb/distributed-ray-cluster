@@ -147,11 +147,11 @@ def real_interactive_prompts():
     
     while connection_attempt < max_connection_attempts:
         try:
-            print(f"   [ATTEMPT {connection_attempt + 1}/{max_connection_attempts}] Connecting to ray://ray-head:10001...")
+            print(f"   [ATTEMPT {connection_attempt + 1}/{max_connection_attempts}] Connecting to ray://52.224.243.185:10001...")
             
             # Initialize Ray connection with better configuration
             ray.init(
-                address="ray://ray-head:10001", 
+                address="ray://52.224.243.185:10001", 
                 namespace="default",
                 log_to_driver=False,  # Reduce log noise
                 ignore_reinit_error=True

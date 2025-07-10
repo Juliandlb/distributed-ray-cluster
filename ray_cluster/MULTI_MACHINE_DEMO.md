@@ -1,16 +1,16 @@
 # 🚀 Multi-Machine Ray Cluster Setup
 
-This guide shows how to set up a distributed Ray cluster across multiple machines using Docker Swarm.
+This guide shows how to set up a distributed Ray cluster across multiple machines using **Direct Ray Connection** (bypassing Docker Swarm for better compatibility).
 
 ## 🎯 Overview
 
-- **Manager Node**: Runs the Ray cluster coordinator and manages the Docker Swarm
-- **Worker Nodes**: Join the Swarm and run Ray workers for inference
-- **Secure Communication**: Uses Docker Swarm overlay network for encrypted communication
+- **Head Node (Azure VM)**: Runs the Ray cluster coordinator and manages the cluster
+- **Worker Nodes (Laptop/Remote)**: Connect directly to the head node using Ray's native networking
+- **Secure Communication**: Uses Ray's built-in networking for encrypted communication
 
-## 🖥️ Step 1: Start the Cluster (Manager Node)
+## 🖥️ Step 1: Start the Cluster (Head Node)
 
-On your manager machine:
+On your Azure VM:
 
 ```bash
 # Clone the repository
@@ -26,30 +26,23 @@ cd distributed-ray-cluster/ray_cluster
 🚀 Starting Ray Cluster (Head Node)
 ==================================
 📍 Public IP: <your-public-ip>
-🔧 Initializing Docker Swarm...
+🔧 Initializing Ray cluster...
 🔨 Building and deploying Ray cluster...
 ⏳ Waiting for services to be ready...
 
-🎯 CLUSTER READY FOR INTERNET WORKERS!
+🎯 CLUSTER READY FOR REMOTE WORKERS!
 ======================================
 📍 Public IP: <your-public-ip>
 🔌 Ray Port: 6379
 📊 Dashboard: http://<your-public-ip>:8265
-
-🔑 Join Token: <swarm-join-token>
-
-🔗 To connect a remote worker, run this on the remote machine:
-   ./join_swarm_worker.sh
-
-After joining, scale workers from the manager (this node):
-   docker service scale ray-cluster_ray-worker=<num>
+🔌 Ray Client Port: 10001
 
 ✅ Cluster is running and ready for remote workers!
 ```
 
 ## 🤖 Step 2: Join Remote Workers
 
-On each remote worker machine:
+On each remote worker machine (e.g., your laptop):
 
 ```bash
 # Clone the repository (if not already done)
@@ -57,50 +50,67 @@ git clone https://github.com/Juliandlb/distributed-ray-cluster.git
 cd distributed-ray-cluster/ray_cluster
 
 # Run the automated join script
-./join_swarm_worker.sh
+./start_remote_worker_direct.sh <HEAD_NODE_IP>
+```
+
+**Example:**
+```bash
+./start_remote_worker_direct.sh 52.224.243.185
 ```
 
 **Expected Output:**
 ```
-🤖 Joining Docker Swarm Cluster
-===============================
-📍 Manager IP: 52.224.243.185
-🔑 Join Token: SWMTKN-1-...
-🔍 Testing connectivity to manager node...
-✅ Connectivity test passed!
-
-🔗 Joining Docker Swarm cluster...
-This node joined a swarm as a worker.
-
-✅ Successfully joined the Docker Swarm cluster!
+🤖 Starting Direct Ray Worker
+============================
+📍 Worker IP: <your-laptop-ip>
+🔗 Connecting to Head: 52.224.243.185:6379
+🔨 Building worker image...
+🚀 Starting direct worker container...
+✅ Ray worker node joined successfully!
 ```
 
-**Alternative: Direct Ray Connection**
-If Docker Swarm doesn't work due to network restrictions, you can use direct Ray connection:
-```bash
-./setup_laptop_worker.sh
-```
+## 🎮 Step 3: Test the Cluster
 
-## 🛠️ Step 3: Scale Workers (from Manager)
-
-Back on the manager node:
+On the head node (VM):
 
 ```bash
-# Scale to 3 workers (or however many you want)
-docker service scale ray-cluster_ray-worker=3
-
-# Check the status
-docker stack services ray-cluster
-docker node ls
+# Run the simple demo to verify cluster status
+docker build -f Dockerfile.simple -t ray-cluster-simple:latest .
+docker run --rm --network host ray-cluster-simple:latest
 ```
 
-## 🎮 Step 4: Test the Cluster
+**Expected Output:**
+```
+🔗 Connecting to Ray cluster...
+✅ Connected to Ray cluster
+🎯 Looking for prompt coordinator...
+✅ Found prompt coordinator
+🤖 Available inference actors: 0
 
-On the manager node:
+⚠️  No inference actors available.
+This is expected if no worker nodes are running inference actors.
+The cluster is working correctly - the head node is running.
+
+📊 Cluster has X nodes:
+   🟢 Head Node (unknown)
+      IP: unknown
+      Actors: 0
+   🔴 Worker Node #1 (unknown)
+      IP: unknown
+      Actors: 0
+
+✅ Cluster is working! The head node is running correctly.
+To add inference actors, you need worker nodes running inference actors.
+```
+
+## 🛠️ Step 4: Run Interactive Demo (When Workers Are Available)
+
+When worker nodes are successfully running inference actors:
 
 ```bash
 # Run the interactive demo
-docker run --rm -it --network ray-cluster_ray-cluster ray-cluster-client:latest
+docker build -f Dockerfile.client -t ray-cluster-client:latest .
+docker run --rm -it --network host ray-cluster-client:latest
 ```
 
 **Example Interaction:**
@@ -135,73 +145,53 @@ docker run --rm -it --network ray-cluster_ray-cluster ray-cluster-client:latest
 ## 📊 Step 5: Monitor the Cluster
 
 ### Ray Dashboard
-- **URL**: http://<manager-public-ip>:8265
+- **URL**: http://<head-node-public-ip>:8265
 - **Shows**: All nodes, actors, resources, and cluster status
 
-### Docker Swarm Commands
+### Ray Client Commands
 ```bash
-# Check all nodes
-docker node ls
+# Check cluster status from head node
+docker run --rm --network host ray-cluster-simple:latest
 
-# Check services
-docker stack services ray-cluster
-
-# Check service logs
-docker service logs ray-cluster_ray-head
-docker service logs ray-cluster_ray-worker
-
-# Check resource usage
-docker stats
+# Check worker logs
+docker logs ray-direct-worker
 ```
 
 ## 🔧 Troubleshooting
 
-### If a worker can't join the Swarm:
-1. **Use the automated script:**
+### If a worker can't join the cluster:
+1. **Check network connectivity:**
    ```bash
-   ./join_swarm_worker.sh
-   ```
-   The script will test connectivity and provide troubleshooting steps.
-
-2. **Manual troubleshooting:**
-   ```bash
-   # Check network connectivity:
-   ping 52.224.243.185
-   telnet 52.224.243.185 2377
+   ping <head-node-ip>
+   telnet <head-node-ip> 6379
    ```
 
-3. **Check firewall settings:**
+2. **Check firewall settings:**
    ```bash
-   # On all nodes, open required ports:
-   sudo ufw allow 2377/tcp    # Swarm management
-   sudo ufw allow 7946/tcp    # Swarm communication
-   sudo ufw allow 7946/udp    # Swarm communication
-   sudo ufw allow 4789/udp    # Overlay network
+   # On head node, ensure ports are open:
    sudo ufw allow 6379/tcp    # Ray
    sudo ufw allow 8265/tcp    # Dashboard
+   sudo ufw allow 10001/tcp   # Ray Client
    ```
 
-4. **Check Docker status:**
+3. **Check Docker networking:**
    ```bash
-   sudo systemctl status docker
-   docker info | grep Swarm
+   # If Docker networking fails, try:
+   docker run --rm --network host --name ray-direct-worker \
+     -e RAY_HEAD_ADDRESS=<head-ip>:6379 \
+     ray-cluster-worker:latest
    ```
 
-5. **Alternative: Use direct Ray connection:**
+### If workers don't create inference actors:
+1. **Check worker logs:**
    ```bash
-   ./setup_laptop_worker.sh
+   docker logs ray-direct-worker
    ```
 
-### If workers don't appear in Ray dashboard:
-1. **Wait for initialization** (can take 1-2 minutes)
-2. **Check service logs:**
+2. **Restart worker with host networking:**
    ```bash
-   docker service logs ray-cluster_ray-worker
-   ```
-3. **Scale workers again:**
-   ```bash
-   docker service scale ray-cluster_ray-worker=0
-   docker service scale ray-cluster_ray-worker=3
+   docker rm -f ray-direct-worker
+   ./start_remote_worker_direct.sh <head-ip>
    ```
 
 ### If the cluster is slow:
@@ -209,57 +199,52 @@ docker stats
    ```bash
    docker stats
    ```
+
 2. **Scale down if needed:**
    ```bash
-   docker service scale ray-cluster_ray-worker=1
+   # Stop workers
+   docker stop ray-direct-worker
    ```
 
 ## 🧹 Cleanup
 
 ### Remove the entire cluster:
 ```bash
-# On manager node
+# On head node
 ./cleanup.sh
 ```
 
 ### Remove a worker node:
 ```bash
 # On worker node
-docker swarm leave
+docker stop ray-direct-worker && docker rm ray-direct-worker
 ```
 
-## 🚀 Advanced Features
+## 🚀 Current Status
 
-### Scale Workers Dynamically
-```bash
-# Scale to 5 workers
-docker service scale ray-cluster_ray-worker=5
+✅ **Working Components:**
+- Head node (Azure VM) running Ray cluster
+- Ray Client connection (port 10001)
+- Prompt coordinator available
+- Cluster status monitoring
+- Simple demo script working
 
-# Scale to 1 worker
-docker service scale ray-cluster_ray-worker=1
-```
+⚠️ **Known Issues:**
+- Docker networking issues on some laptops prevent worker containers from starting
+- Workers may join cluster but not create inference actors due to networking constraints
 
-### Add More Worker Nodes
-1. Install Docker on a new machine
-2. Join the Swarm using the same token
-3. Scale the service to use the new node
-
-### Monitor in Real-Time
-```bash
-# Watch service status
-watch -n 5 'docker stack services ray-cluster'
-
-# Follow logs
-docker service logs -f ray-cluster_ray-worker
-```
+🔧 **Workarounds:**
+- Use `--network host` for worker containers
+- Run workers on machines without Docker networking issues
+- Use the simple demo to verify cluster functionality
 
 ## 🎯 Success Criteria
 
 ✅ **You should see:**
-1. All worker nodes appear in `docker node ls`
-2. Ray workers running on multiple machines
-3. Ray dashboard shows all nodes
-4. Interactive prompts are processed across different machines
-5. Response shows different worker hostnames/IPs
+1. Head node running Ray cluster
+2. Ray Client connecting successfully
+3. Prompt coordinator available
+4. Simple demo showing cluster status
+5. Worker nodes joining (when networking works)
 
 **Your multi-machine Ray cluster is now ready! 🎉** 
