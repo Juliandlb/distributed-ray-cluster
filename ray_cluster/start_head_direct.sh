@@ -13,7 +13,7 @@ echo "📍 Public IP: $PUBLIC_IP"
 export PYTHONPATH=/mnt/data/distributed-ray-cluster/ray_cluster/ray_demo_env/lib/python3.11/site-packages
 
 # Start Ray head node
-/mnt/data/distributed-ray-cluster/ray_cluster/ray_demo_env/bin/python3.11 -m ray.scripts.scripts start --head --port=6379 --ray-client-server-port=10001 --dashboard-host=0.0.0.0 --dashboard-port=8265 --temp-dir=./tmp
+/mnt/data/distributed-ray-cluster/ray_cluster/ray_demo_env/bin/python3.11 -m ray.scripts.scripts start --head --port=6379 --ray-client-server-port=10001 --dashboard-host=0.0.0.0 --dashboard-port=8265 --temp-dir=/mnt/data/distributed-ray-cluster/ray_cluster/tmp
 
 echo ""
 echo "🎯 CLUSTER READY FOR REMOTE WORKERS!"
