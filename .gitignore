@@ -44,3 +44,4 @@ ENV/
 Thumbs.db 
 # Ray temporary files
 ray_cluster/tmp/
+ray_cluster/ray_demo_env/
