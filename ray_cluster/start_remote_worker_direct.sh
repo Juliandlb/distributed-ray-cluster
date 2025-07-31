@@ -3,10 +3,10 @@
 set -e
 
 if [ -z "$1" ]; then
-  echo "❌ Error: Head node IP address is required"
-  echo "Usage: $0 <HEAD_NODE_IP>"
-  echo "Example: $0 52.224.243.185"
-  exit 1
+    echo "❌ Error: Head node IP address is required"
+    echo "Usage: $0 <HEAD_NODE_IP>"
+    echo "Example: $0 52.224.243.185"
+    exit 1
 fi
 
 HEAD_NODE_IP="$1"
@@ -29,9 +29,4 @@ cat <<EOF
 🔨 Building worker image...
 EOF
 
-docker build -f Dockerfile.worker -t ray-cluster-worker:latest .
-
-echo "🚀 Starting direct worker container..."
-docker run --rm --network host --name ray-direct-worker \
-  -e RAY_HEAD_ADDRESS="$RAY_HEAD_ADDRESS" \
-  ray-cluster-worker:latest 
+ray start --address=$RAY_HEAD_ADDRESS

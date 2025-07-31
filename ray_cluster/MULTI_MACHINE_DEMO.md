@@ -37,7 +37,7 @@ git clone https://github.com/Juliandlb/distributed-ray-cluster.git
 cd distributed-ray-cluster/ray_cluster
 
 # Start the cluster
-./start_cluster.sh
+./start_head_direct.sh
 ```
 
 **Expected Output:**
@@ -82,9 +82,8 @@ cd distributed-ray-cluster/ray_cluster
 🤖 Starting Direct Ray Worker
 ============================
 📍 Worker IP: <your-laptop-ip>
-🔗 Connecting to Head: 52.224.243.185:6379
-🔨 Building worker image...
-🚀 Starting direct worker container...
+🔗 Connecting to Head: <HEAD_NODE_IP>:6379
+🚀 Starting Ray worker...
 ✅ Ray worker node joined successfully!
 ```
 
