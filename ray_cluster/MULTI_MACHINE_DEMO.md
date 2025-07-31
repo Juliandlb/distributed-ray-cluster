@@ -2,11 +2,30 @@
 
 This guide shows how to set up a distributed Ray cluster across multiple machines using **Direct Ray Connection** (bypassing Docker Swarm for better compatibility).
 
+## 🎯 Goal of the Demo
+
+The primary goal of this demonstration is to illustrate a distributed computing setup where a central **head node** (running on a VM) coordinates tasks for one or more **worker nodes** (including a remote laptop). This setup is designed to showcase how a resource-intensive task, such as responding to a prompt, can be offloaded from a local machine to a more powerful, distributed cluster.
+
+In this demo, you will:
+
+1.  **Set up a Ray cluster:** A head node on a VM will form the core of the cluster.
+2.  **Connect a remote worker:** Your laptop will join the cluster as a worker node.
+3.  **Run a distributed application:** You will send a prompt to the head node, which will then delegate the processing of that prompt to the connected worker nodes.
+4.  **Observe distributed computing in action:** You will see the response from the worker node, demonstrating that the task was successfully offloaded and executed remotely.
+
+This setup provides a practical example of how to leverage distributed computing to scale applications and perform intensive computations on remote resources.
+
 ## 🎯 Overview
 
-- **Head Node (Azure VM)**: Runs the Ray cluster coordinator and manages the cluster
-- **Worker Nodes (Laptop/Remote)**: Connect directly to the head node using Ray's native networking
-- **Secure Communication**: Uses Ray's built-in networking for encrypted communication
+##  Architecture Overview
+
+This demo uses a simple, direct-connection architecture:
+
+- **Head Node (Azure VM):** This is the central coordinator of the Ray cluster. It runs the Ray head process, manages the cluster's state, and orchestrates the distribution of tasks. It does *not* run a Docker Swarm, simplifying the setup and avoiding potential networking complexities.
+- **Worker Nodes (Laptop/Remote):** These are the machines that perform the actual computations. They connect directly to the head node using Ray's native TCP communication, without needing to be part of a Docker Swarm. This allows for a more flexible and heterogeneous cluster.
+- **Client:** A client application connects to the head node to submit tasks (in this case, prompts) and retrieve results.
+
+This direct-connection model is ideal for scenarios where you want to quickly and easily connect remote machines to a central cluster without the overhead of a more complex container orchestration system.
 
 ## 🖥️ Step 1: Start the Cluster (Head Node)
 
@@ -70,6 +89,18 @@ cd distributed-ray-cluster/ray_cluster
 ```
 
 ## 🎮 Step 3: Test the Cluster
+
+## How it Works: The Journey of a Prompt
+
+When you submit a prompt to the cluster, it goes through the following steps:
+
+1.  **Client Submission:** The interactive client connects to the Ray cluster via the head node's client port (10001).
+2.  **Coordinator on Head Node:** The client looks for a "prompt coordinator" actor running on the head node. This actor is responsible for receiving prompts and distributing them to available workers.
+3.  **Task Distribution:** The coordinator forwards the prompt to one of the available "inference actors" running on the worker nodes.
+4.  **Worker Execution:** The inference actor on the worker node receives the prompt, processes it (in a real-world scenario, this would involve a machine learning model), and generates a response.
+5.  **Response Return:** The response is sent back to the coordinator, which then forwards it to the client.
+
+This entire process is orchestrated by Ray, which handles the communication, task scheduling, and data serialization between the different components.
 
 On the head node (VM):
 
